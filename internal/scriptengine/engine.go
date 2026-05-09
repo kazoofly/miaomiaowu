@@ -3,17 +3,76 @@ package scriptengine
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
+
+	"miaomiaowu/internal/logger"
+	"miaomiaowu/internal/substore"
 
 	"github.com/dop251/goja"
 )
 
 const defaultTimeout = 5 * time.Second
 
+func setupVM(vm *goja.Runtime) {
+	console := vm.NewObject()
+	makeLogFn := func(level string) func(goja.FunctionCall) goja.Value {
+		return func(call goja.FunctionCall) goja.Value {
+			parts := make([]string, len(call.Arguments))
+			for i, arg := range call.Arguments {
+				parts[i] = fmt.Sprintf("%v", arg.Export())
+			}
+			msg := strings.Join(parts, " ")
+			switch level {
+			case "warn":
+				logger.Warn("[OverrideScript]", "console.warn", msg)
+			case "error":
+				logger.Error("[OverrideScript]", "console.error", msg)
+			default:
+				logger.Info("[OverrideScript]", "console.log", msg)
+			}
+			return goja.Undefined()
+		}
+	}
+	console.Set("log", makeLogFn("log"))
+	console.Set("warn", makeLogFn("warn"))
+	console.Set("error", makeLogFn("error"))
+	vm.Set("console", console)
+
+	vm.Set("produce", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			panic(vm.ToValue("produce(proxies, targetFormat): requires 2 arguments"))
+		}
+
+		proxiesRaw := call.Arguments[0].Export()
+		targetFormat := call.Arguments[1].String()
+
+		arr, ok := proxiesRaw.([]interface{})
+		if !ok {
+			panic(vm.ToValue("produce: first argument must be an array of proxy objects"))
+		}
+
+		proxies := make([]substore.Proxy, 0, len(arr))
+		for _, item := range arr {
+			if m, ok := item.(map[string]interface{}); ok {
+				proxies = append(proxies, substore.Proxy(m))
+			}
+		}
+
+		result, err := substore.GetDefaultFactory().ConvertProxies(proxies, targetFormat, &substore.ProduceOptions{})
+		if err != nil {
+			panic(vm.ToValue("produce: " + err.Error()))
+		}
+
+		return vm.ToValue(result)
+	})
+}
+
 // RunPostFetch executes a "post_fetch" script against a full config map.
 // The script must define: function main(config) { ... return config; }
 func RunPostFetch(ctx context.Context, script string, config map[string]interface{}) (map[string]interface{}, error) {
 	vm := goja.New()
+	setupVM(vm)
 
 	if err := vm.Set("__input__", config); err != nil {
 		return nil, fmt.Errorf("set input: %w", err)
@@ -41,6 +100,7 @@ func RunPostFetch(ctx context.Context, script string, config map[string]interfac
 // The script must define: function main(proxies) { ... return proxies; }
 func RunPreSaveNodes(ctx context.Context, script string, proxies []map[string]interface{}) ([]map[string]interface{}, error) {
 	vm := goja.New()
+	setupVM(vm)
 
 	input := make([]interface{}, len(proxies))
 	for i, p := range proxies {

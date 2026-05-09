@@ -69,7 +69,7 @@ type ScriptFormData = {
 }
 
 const HOOK_LABELS: Record<string, string> = {
-  post_fetch: '获取订阅后',
+  post_fetch: '转换为客户端配置前',
   pre_save_nodes: '保存外部订阅节点前',
 }
 
@@ -332,7 +332,7 @@ function OverrideScriptsPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value='post_fetch'>获取订阅后</SelectItem>
+                  <SelectItem value='post_fetch'>转换为客户端配置前</SelectItem>
                   <SelectItem value='pre_save_nodes'>保存外部订阅节点前</SelectItem>
                 </SelectContent>
               </Select>

@@ -467,16 +467,16 @@ func (h *subscribeFilesHandler) handleUpdate(w http.ResponseWriter, r *http.Requ
 	if req.StatsServerIDs != nil {
 		existing.StatsServerIDs = *req.StatsServerIDs
 	}
-	// 更新模板绑定（绑定模板后禁用规则同步）
+	// 更新模板绑定（绑定模板后禁用覆写开关）
 	templateJustBound := false
 	tagsChanged := false
 	if req.TemplateFilename != nil {
 		existing.TemplateFilename = *req.TemplateFilename
-		// 绑定模板后自动禁用规则同步，因为配置将由模板生成
+		// 绑定模板后自动禁用覆写开关，因为配置将由模板生成
 		if *req.TemplateFilename != "" {
 			existing.AutoSyncCustomRules = false
 			templateJustBound = true
-			logger.Info("[订阅更新] 绑定模板，已禁用规则同步", "subscribe_id", existing.ID, "template", *req.TemplateFilename)
+			logger.Info("[订阅更新] 绑定模板，已禁用覆写开关", "subscribe_id", existing.ID, "template", *req.TemplateFilename)
 		}
 	}
 	// 更新选中的节点标签

@@ -656,11 +656,32 @@ func (h *SubscriptionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	}
 	logger.Info("[⏱️ 耗时监测] 节点排序完成", "step", "node_order", "duration_ms", time.Since(stepStart).Milliseconds())
 
+	// 执行覆写脚本（post_fetch 钩子），转换为客户端配置前执行，对所有客户端类型生效
+	stepStart = time.Now()
+	if hasSubscribeFile && subscribeFile.AutoSyncCustomRules {
+		if username := auth.UsernameFromContext(r.Context()); username != "" {
+			if sysCfg, err := h.repo.GetSystemConfig(r.Context()); err == nil && sysCfg.EnableOverrideScripts {
+				scripts, _ := h.repo.ListOverrideScripts(r.Context(), username, "post_fetch")
+				for _, s := range scripts {
+					if s.Enabled {
+						modified, err := h.runPostFetchScript(r.Context(), s.Content, data)
+						if err != nil {
+							logger.Info("[OverrideScript] post_fetch 脚本执行失败", "script", s.Name, "error", err)
+							continue
+						}
+						data = modified
+					}
+				}
+			}
+		}
+	}
+	logger.Info("[⏱️ 耗时监测] 覆写脚本执行完成", "step", "override_script", "duration_ms", time.Since(stepStart).Milliseconds())
+
 	// 格式转换
 	stepStart = time.Now()
-	// 根据参数t的类型调用substore的转换代码
+	// 根��参数t的类型调用substore的转换代码
 	clientType := strings.TrimSpace(r.URL.Query().Get("t"))
-	// 默认浏览器打开时直接输入文本, 不再下载问卷
+	// 默认浏览器打开时直接��入文本, 不再下载问卷
 	contentType := "text/yaml; charset=utf-8; charset=UTF-8"
 	ext := filepath.Ext(filename)
 	if ext == "" {
@@ -669,7 +690,6 @@ func (h *SubscriptionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 
 	// clash 和 clashmeta 类型直接输出源文件, 不需要转换
 	if clientType != "" && clientType != "clash" && clientType != "clashmeta" {
-		// Convert subscription using substore producers
 		convertedData, err := h.convertSubscription(r.Context(), data, clientType)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, fmt.Errorf("failed to convert subscription for client %s: %w", clientType, err))
@@ -680,23 +700,18 @@ func (h *SubscriptionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		// Set content type and extension based on client type
 		switch clientType {
 		case "surge", "surgemac", "loon", "qx", "surfboard", "shadowrocket", "clash-to-surge", "clash-to-shadowrocket":
-			// Text-based formats
 			contentType = "text/plain; charset=utf-8"
 			ext = ".txt"
 		case "sing-box":
-			// JSON format
 			contentType = "application/json; charset=utf-8"
 			ext = ".json"
 		case "v2ray":
-			// Base64 format
 			contentType = "text/plain; charset=utf-8"
 			ext = ".txt"
 		case "uri":
-			// URI format
 			contentType = "text/plain; charset=utf-8"
 			ext = ".txt"
 		default:
-			// YAML-based formats (clash, clashmeta, stash, shadowrocket, egern)
 			contentType = "text/yaml; charset=utf-8"
 			ext = ".yaml"
 		}
@@ -1276,7 +1291,31 @@ func (h *SubscriptionHandler) serveTokenInvalidResponse(w http.ResponseWriter, r
 	logger.Info("⚠️⚠️⚠️ [SUB_INVALID] Token失效或过期访问", "client_type", clientType)
 }
 
-// convertSubscription converts a YAML subscription file to the specified client format
+// runPostFetchScript parses YAML data, executes an override script, and re-marshals the result.
+func (h *SubscriptionHandler) runPostFetchScript(ctx context.Context, script string, yamlData []byte) ([]byte, error) {
+	var rootNode yaml.Node
+	if err := yaml.Unmarshal(yamlData, &rootNode); err != nil {
+		return nil, fmt.Errorf("parse YAML: %w", err)
+	}
+
+	config, err := yamlNodeToMap(&rootNode)
+	if err != nil {
+		return nil, fmt.Errorf("convert YAML node: %w", err)
+	}
+
+	modified, err := scriptengine.RunPostFetch(ctx, script, config)
+	if err != nil {
+		return nil, err
+	}
+
+	out, err := yaml.Marshal(modified)
+	if err != nil {
+		return nil, fmt.Errorf("marshal YAML: %w", err)
+	}
+	return out, nil
+}
+
+// convertSubscription converts a YAML subscription file to the specified client format.
 func (h *SubscriptionHandler) convertSubscription(ctx context.Context, yamlData []byte, clientType string) ([]byte, error) {
 	// 使用 yaml.Node 解析, 解决值前导零的问题
 	var rootNode yaml.Node
@@ -1287,23 +1326,6 @@ func (h *SubscriptionHandler) convertSubscription(ctx context.Context, yamlData 
 	config, err := yamlNodeToMap(&rootNode)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert YAML node: %w", err)
-	}
-
-	// 执行覆写脚本（post_fetch 钩子）
-	if username := auth.UsernameFromContext(ctx); username != "" {
-		if sysCfg, err := h.repo.GetSystemConfig(ctx); err == nil && sysCfg.EnableOverrideScripts {
-			scripts, _ := h.repo.ListOverrideScripts(ctx, username, "post_fetch")
-			for _, s := range scripts {
-				if s.Enabled {
-					modified, err := scriptengine.RunPostFetch(ctx, s.Content, config)
-					if err != nil {
-						logger.Info("[OverrideScript] post_fetch 脚本执行失败", "script", s.Name, "error", err)
-						continue
-					}
-					config = modified
-				}
-			}
-		}
 	}
 
 	// 读取yaml中proxies属性的节点列表

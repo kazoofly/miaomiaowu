@@ -1388,7 +1388,7 @@ function SubscribeFilesPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['subscribe-files'] })
-      toast.success('规则同步设置已更新')
+      toast.success('覆写开关设置已更新')
     },
     onError: (error) => {
       handleServerError(error)
@@ -2807,7 +2807,7 @@ function SubscribeFilesPage() {
                     width: '180px'
                   },
                   {
-                    header: '规则同步',
+                    header: '覆写开关',
                     cell: (file) => (
                       <div className='flex items-center gap-2'>
                         {/* 有点绕, 如果绑定了模板, 则选中状态为false, 未绑定模板v3则选中状态以auto_sync_custom_rules为准 */}
@@ -3385,7 +3385,7 @@ function SubscribeFilesPage() {
                       )
                     },
                     {
-                      label: '规则同步',
+                      label: '覆写开关',
                       value: (file) => (
                         <div className='flex items-center gap-2'>
                           <Switch
@@ -4868,7 +4868,7 @@ function SubscribeFilesPage() {
                 </PopoverContent>
               </Popover>
               <p className='text-xs text-muted-foreground'>
-                绑定模板后，获取订阅时将根据模板动态生成配置。绑定模板会自动禁用规则同步。
+                绑定模板后，获取订阅时将根据模板动态生成配置。绑定模板会自动禁用覆写开关。
               </p>
             </div>
             {/* 节点标签选择（仅绑定模板时显示） */}
