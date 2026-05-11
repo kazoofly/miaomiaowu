@@ -519,3 +519,5 @@ img.emoji {
     margin: 0 !important;
   }
 }
+
+@import './flat-theme.css';
