@@ -56,6 +56,8 @@ type SubscribeFile = {
   type: 'create' | 'import' | 'upload'
   filename: string
   auto_sync_custom_rules: boolean
+  selected_custom_rule_ids: number[]
+  selected_override_script_ids: number[]
   template_filename: string
   selected_tags: string[]
   custom_short_code?: string
@@ -543,6 +545,32 @@ function SubscribeFilesPage() {
     },
     enabled: Boolean(auth.accessToken && (isExternalSubsExpanded || hasTemplateBindings)),
   })
+
+  const { data: customRulesData } = useQuery({
+    queryKey: ['custom-rules'],
+    queryFn: async () => {
+      const response = await api.get('/api/admin/custom-rules')
+      return response.data as { id: number; name: string; type: string; enabled: boolean }[]
+    },
+  })
+
+  const { data: overrideScriptsData } = useQuery({
+    queryKey: ['override-scripts'],
+    queryFn: async () => {
+      const response = await api.get('/api/admin/override-scripts')
+      return response.data as { id: number; name: string; hook: string; enabled: boolean }[]
+    },
+  })
+
+  const enabledCustomRules = useMemo(() =>
+    (customRulesData ?? []).filter(r => r.enabled),
+    [customRulesData]
+  )
+
+  const enabledOverrideScripts = useMemo(() =>
+    (overrideScriptsData ?? []).filter(s => s.enabled),
+    [overrideScriptsData]
+  )
 
   // 按 tag 分组的节点名称
   const nodesByTag = useMemo(() => {
@@ -1379,21 +1407,7 @@ function SubscribeFilesPage() {
     },
   })
 
-  const toggleAutoSyncMutation = useMutation({
-    mutationFn: async (payload: { id: number; enabled: boolean }) => {
-      const response = await api.patch(`/api/admin/subscribe-files/${payload.id}`, {
-        auto_sync_custom_rules: payload.enabled,
-      })
-      return response.data
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['subscribe-files'] })
-      toast.success('覆写开关设置已更新')
-    },
-    onError: (error) => {
-      handleServerError(error)
-    },
-  })
+
 
   // 当文件内容加载完成时，更新编辑器
   useEffect(() => {
@@ -1652,10 +1666,6 @@ function SubscribeFilesPage() {
     }
 
     saveConfigMutation.mutate({ filename: editingConfigFile.filename, content: contentToSave })
-  }
-
-  const handleToggleAutoSync = (id: number, enabled: boolean) => {
-    toggleAutoSyncMutation.mutate({ id, enabled })
   }
 
   const handleEditNodes = (file: SubscribeFile) => {
@@ -2822,16 +2832,172 @@ function SubscribeFilesPage() {
                     width: '180px'
                   },
                   {
-                    header: '覆写开关',
-                    cell: (file) => (
-                      <Switch
-                        checked={file.auto_sync_custom_rules || false}
-                        onCheckedChange={(checked) => handleToggleAutoSync(file.id, checked)}
-                      />
-                    ),
+                    header: '覆写配置',
+                    cell: (file) => {
+                      const ruleIds = file.selected_custom_rule_ids || []
+                      const scriptIds = file.selected_override_script_ids || []
+                      const totalSelected = ruleIds.length + scriptIds.length
+                      const totalAvailable = enabledCustomRules.length + enabledOverrideScripts.length
+                      const isEnabled = file.auto_sync_custom_rules
+                      return (
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="w-[120px] h-8 text-xs justify-between"
+                              disabled={updateMetadataMutation.isPending}
+                            >
+                              <span className="truncate">
+                                {!isEnabled ? '未启用' : totalSelected === 0 ? `全部(${totalAvailable})` : `${totalSelected} 项`}
+                              </span>
+                              <ChevronDown className="h-3 w-3 shrink-0 opacity-50" />
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-[240px] p-1" align="start">
+                            <div className="flex flex-col max-h-[400px] overflow-y-auto">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className={cn("justify-start text-xs h-8", !isEnabled && "bg-accent")}
+                                onClick={() => {
+                                  updateMetadataMutation.mutate({
+                                    id: file.id,
+                                    data: {
+                                      name: file.name,
+                                      description: file.description,
+                                      auto_sync_custom_rules: false,
+                                      selected_custom_rule_ids: [],
+                                      selected_override_script_ids: [],
+                                    }
+                                  }, { onSuccess: () => toast.success('已关闭覆写') })
+                                }}
+                              >
+                                {!isEnabled && <Check className="h-3 w-3 mr-2" />}
+                                <span className={!isEnabled ? '' : 'ml-5'}>不启用</span>
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className={cn("justify-start text-xs h-8", isEnabled && totalSelected === 0 && "bg-accent")}
+                                onClick={() => {
+                                  updateMetadataMutation.mutate({
+                                    id: file.id,
+                                    data: {
+                                      name: file.name,
+                                      description: file.description,
+                                      auto_sync_custom_rules: true,
+                                      selected_custom_rule_ids: [],
+                                      selected_override_script_ids: [],
+                                    }
+                                  }, { onSuccess: () => toast.success('已启用全部覆写') })
+                                }}
+                              >
+                                {isEnabled && totalSelected === 0 && <Check className="h-3 w-3 mr-2" />}
+                                <span className={isEnabled && totalSelected === 0 ? '' : 'ml-5'}>全部启用</span>
+                              </Button>
+                              {enabledCustomRules.length > 0 && (
+                                <>
+                                  <div className="px-2 py-1.5 text-xs text-muted-foreground font-medium border-t mt-1 pt-1.5">自定义规则</div>
+                                  {enabledCustomRules.map((rule) => {
+                                    const isSelected = isEnabled && (totalSelected === 0 || ruleIds.includes(rule.id))
+                                    return (
+                                      <Button
+                                        key={`rule-${rule.id}`}
+                                        variant="ghost"
+                                        size="sm"
+                                        className={cn("justify-start text-xs h-8", isSelected && "bg-accent")}
+                                        onClick={() => {
+                                          if (!isEnabled) return
+                                          let newRuleIds: number[]
+                                          let newScriptIds: number[]
+                                          if (totalSelected === 0) {
+                                            newRuleIds = enabledCustomRules.filter(r => r.id !== rule.id).map(r => r.id)
+                                            newScriptIds = enabledOverrideScripts.map(s => s.id)
+                                          } else {
+                                            newRuleIds = ruleIds.includes(rule.id) ? ruleIds.filter(id => id !== rule.id) : [...ruleIds, rule.id]
+                                            newScriptIds = scriptIds
+                                          }
+                                          if (newRuleIds.length === enabledCustomRules.length && newScriptIds.length === enabledOverrideScripts.length) {
+                                            newRuleIds = []
+                                            newScriptIds = []
+                                          }
+                                          const allEmpty = newRuleIds.length === 0 && newScriptIds.length === 0 && totalSelected > 0
+                                          updateMetadataMutation.mutate({
+                                            id: file.id,
+                                            data: {
+                                              name: file.name,
+                                              description: file.description,
+                                              auto_sync_custom_rules: !allEmpty,
+                                              selected_custom_rule_ids: newRuleIds,
+                                              selected_override_script_ids: newScriptIds,
+                                            }
+                                          })
+                                        }}
+                                      >
+                                        {isSelected && <Check className="h-3 w-3 mr-2" />}
+                                        <span className={isSelected ? '' : 'ml-5'}>{rule.name}</span>
+                                        <Badge variant="outline" className="ml-auto text-[10px] px-1 py-0">{rule.type}</Badge>
+                                      </Button>
+                                    )
+                                  })}
+                                </>
+                              )}
+                              {enabledOverrideScripts.length > 0 && (
+                                <>
+                                  <div className="px-2 py-1.5 text-xs text-muted-foreground font-medium border-t mt-1 pt-1.5">覆写脚本</div>
+                                  {enabledOverrideScripts.map((script) => {
+                                    const isSelected = isEnabled && (totalSelected === 0 || scriptIds.includes(script.id))
+                                    return (
+                                      <Button
+                                        key={`script-${script.id}`}
+                                        variant="ghost"
+                                        size="sm"
+                                        className={cn("justify-start text-xs h-8", isSelected && "bg-accent")}
+                                        onClick={() => {
+                                          if (!isEnabled) return
+                                          let newScriptIds: number[]
+                                          let newRuleIds: number[]
+                                          if (totalSelected === 0) {
+                                            newScriptIds = enabledOverrideScripts.filter(s => s.id !== script.id).map(s => s.id)
+                                            newRuleIds = enabledCustomRules.map(r => r.id)
+                                          } else {
+                                            newScriptIds = scriptIds.includes(script.id) ? scriptIds.filter(id => id !== script.id) : [...scriptIds, script.id]
+                                            newRuleIds = ruleIds
+                                          }
+                                          if (newRuleIds.length === enabledCustomRules.length && newScriptIds.length === enabledOverrideScripts.length) {
+                                            newRuleIds = []
+                                            newScriptIds = []
+                                          }
+                                          const allEmpty = newRuleIds.length === 0 && newScriptIds.length === 0 && totalSelected > 0
+                                          updateMetadataMutation.mutate({
+                                            id: file.id,
+                                            data: {
+                                              name: file.name,
+                                              description: file.description,
+                                              auto_sync_custom_rules: !allEmpty,
+                                              selected_custom_rule_ids: newRuleIds,
+                                              selected_override_script_ids: newScriptIds,
+                                            }
+                                          })
+                                        }}
+                                      >
+                                        {isSelected && <Check className="h-3 w-3 mr-2" />}
+                                        <span className={isSelected ? '' : 'ml-5'}>{script.name}</span>
+                                        <Badge variant="outline" className="ml-auto text-[10px] px-1 py-0">{script.hook === 'post_fetch' ? '获取后' : '保存前'}</Badge>
+                                      </Button>
+                                    )
+                                  })}
+                                </>
+                              )}
+                            </div>
+                          </PopoverContent>
+                        </Popover>
+                      )
+                    },
                     headerClassName: 'text-center',
                     cellClassName: 'text-center',
-                    width: '120px'
+                    width: '140px'
                   },
                   {
                     header: '自定义连接',
@@ -3393,16 +3559,118 @@ function SubscribeFilesPage() {
                       )
                     },
                     {
-                      label: '覆写开关',
-                      value: (file) => (
-                        <div className='flex items-center gap-2'>
-                          <Switch
-                            checked={file.auto_sync_custom_rules || false}
-                            onCheckedChange={(checked) => handleToggleAutoSync(file.id, checked)}
-                          />
-                          <span className='text-xs'>{file.auto_sync_custom_rules ? '已启用' : '未启用'}</span>
-                        </div>
-                      )
+                      label: '覆写配置',
+                      value: (file) => {
+                        const ruleIds = file.selected_custom_rule_ids || []
+                        const scriptIds = file.selected_override_script_ids || []
+                        const totalSelected = ruleIds.length + scriptIds.length
+                        const totalAvailable = enabledCustomRules.length + enabledOverrideScripts.length
+                        const isEnabled = file.auto_sync_custom_rules
+                        return (
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <Button variant="outline" size="sm" className="h-8 text-xs justify-between w-[120px]">
+                                <span className="truncate">
+                                  {!isEnabled ? '未启用' : totalSelected === 0 ? `全部(${totalAvailable})` : `${totalSelected} 项`}
+                                </span>
+                                <ChevronDown className="h-3 w-3 shrink-0 opacity-50" />
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-[240px] p-1" align="start">
+                              <div className="flex flex-col max-h-[400px] overflow-y-auto">
+                                <Button
+                                  variant="ghost" size="sm"
+                                  className={cn("justify-start text-xs h-8", !isEnabled && "bg-accent")}
+                                  onClick={() => {
+                                    updateMetadataMutation.mutate({
+                                      id: file.id,
+                                      data: { name: file.name, description: file.description, auto_sync_custom_rules: false, selected_custom_rule_ids: [], selected_override_script_ids: [] }
+                                    }, { onSuccess: () => toast.success('已关闭覆写') })
+                                  }}
+                                >
+                                  {!isEnabled && <Check className="h-3 w-3 mr-2" />}
+                                  <span className={!isEnabled ? '' : 'ml-5'}>不启用</span>
+                                </Button>
+                                <Button
+                                  variant="ghost" size="sm"
+                                  className={cn("justify-start text-xs h-8", isEnabled && totalSelected === 0 && "bg-accent")}
+                                  onClick={() => {
+                                    updateMetadataMutation.mutate({
+                                      id: file.id,
+                                      data: { name: file.name, description: file.description, auto_sync_custom_rules: true, selected_custom_rule_ids: [], selected_override_script_ids: [] }
+                                    }, { onSuccess: () => toast.success('已启用全部覆写') })
+                                  }}
+                                >
+                                  {isEnabled && totalSelected === 0 && <Check className="h-3 w-3 mr-2" />}
+                                  <span className={isEnabled && totalSelected === 0 ? '' : 'ml-5'}>全部启用</span>
+                                </Button>
+                                {enabledCustomRules.length > 0 && (
+                                  <>
+                                    <div className="px-2 py-1.5 text-xs text-muted-foreground font-medium border-t mt-1 pt-1.5">自定义规则</div>
+                                    {enabledCustomRules.map((rule) => {
+                                      const isSelected = isEnabled && (totalSelected === 0 || ruleIds.includes(rule.id))
+                                      return (
+                                        <Button key={`rule-${rule.id}`} variant="ghost" size="sm" className={cn("justify-start text-xs h-8", isSelected && "bg-accent")}
+                                          onClick={() => {
+                                            if (!isEnabled) return
+                                            let newRuleIds: number[]
+                                            let newScriptIds: number[]
+                                            if (totalSelected === 0) {
+                                              newRuleIds = enabledCustomRules.filter(r => r.id !== rule.id).map(r => r.id)
+                                              newScriptIds = enabledOverrideScripts.map(s => s.id)
+                                            } else {
+                                              newRuleIds = ruleIds.includes(rule.id) ? ruleIds.filter(id => id !== rule.id) : [...ruleIds, rule.id]
+                                              newScriptIds = scriptIds
+                                            }
+                                            if (newRuleIds.length === enabledCustomRules.length && newScriptIds.length === enabledOverrideScripts.length) { newRuleIds = []; newScriptIds = [] }
+                                            const allEmpty = newRuleIds.length === 0 && newScriptIds.length === 0 && totalSelected > 0
+                                            updateMetadataMutation.mutate({ id: file.id, data: { name: file.name, description: file.description, auto_sync_custom_rules: !allEmpty, selected_custom_rule_ids: newRuleIds, selected_override_script_ids: newScriptIds } })
+                                          }}
+                                        >
+                                          {isSelected && <Check className="h-3 w-3 mr-2" />}
+                                          <span className={isSelected ? '' : 'ml-5'}>{rule.name}</span>
+                                          <Badge variant="outline" className="ml-auto text-[10px] px-1 py-0">{rule.type}</Badge>
+                                        </Button>
+                                      )
+                                    })}
+                                  </>
+                                )}
+                                {enabledOverrideScripts.length > 0 && (
+                                  <>
+                                    <div className="px-2 py-1.5 text-xs text-muted-foreground font-medium border-t mt-1 pt-1.5">覆写脚本</div>
+                                    {enabledOverrideScripts.map((script) => {
+                                      const isSelected = isEnabled && (totalSelected === 0 || scriptIds.includes(script.id))
+                                      return (
+                                        <Button key={`script-${script.id}`} variant="ghost" size="sm" className={cn("justify-start text-xs h-8", isSelected && "bg-accent")}
+                                          onClick={() => {
+                                            if (!isEnabled) return
+                                            let newScriptIds: number[]
+                                            let newRuleIds: number[]
+                                            if (totalSelected === 0) {
+                                              newScriptIds = enabledOverrideScripts.filter(s => s.id !== script.id).map(s => s.id)
+                                              newRuleIds = enabledCustomRules.map(r => r.id)
+                                            } else {
+                                              newScriptIds = scriptIds.includes(script.id) ? scriptIds.filter(id => id !== script.id) : [...scriptIds, script.id]
+                                              newRuleIds = ruleIds
+                                            }
+                                            if (newRuleIds.length === enabledCustomRules.length && newScriptIds.length === enabledOverrideScripts.length) { newRuleIds = []; newScriptIds = [] }
+                                            const allEmpty = newRuleIds.length === 0 && newScriptIds.length === 0 && totalSelected > 0
+                                            updateMetadataMutation.mutate({ id: file.id, data: { name: file.name, description: file.description, auto_sync_custom_rules: !allEmpty, selected_custom_rule_ids: newRuleIds, selected_override_script_ids: newScriptIds } })
+                                          }}
+                                        >
+                                          {isSelected && <Check className="h-3 w-3 mr-2" />}
+                                          <span className={isSelected ? '' : 'ml-5'}>{script.name}</span>
+                                          <Badge variant="outline" className="ml-auto text-[10px] px-1 py-0">{script.hook === 'post_fetch' ? '获取后' : '保存前'}</Badge>
+                                        </Button>
+                                      )
+                                    })}
+                                  </>
+                                )}
+                              </div>
+                            </PopoverContent>
+                          </Popover>
+                        )
+                      }
                     },
                     {
                       label: '过期时间',

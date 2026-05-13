@@ -454,6 +454,12 @@ func (h *subscribeFilesHandler) handleUpdate(w http.ResponseWriter, r *http.Requ
 	if req.AutoSyncCustomRules != nil {
 		existing.AutoSyncCustomRules = *req.AutoSyncCustomRules
 	}
+	if req.SelectedCustomRuleIDs != nil {
+		existing.SelectedCustomRuleIDs = req.SelectedCustomRuleIDs
+	}
+	if req.SelectedOverrideScriptIDs != nil {
+		existing.SelectedOverrideScriptIDs = req.SelectedOverrideScriptIDs
+	}
 	if req.RawOutput != nil {
 		existing.RawOutput = *req.RawOutput
 	}
@@ -660,9 +666,11 @@ type subscribeFileRequest struct {
 	URL                 string   `json:"url"`
 	Type                string   `json:"type"`
 	Filename            string   `json:"filename"`
-	AutoSyncCustomRules *bool    `json:"auto_sync_custom_rules,omitempty"` // Pointer to distinguish between false and not provided
-	TemplateFilename    *string  `json:"template_filename,omitempty"`      // 绑定的 V3 模板文件名
-	SelectedTags        []string `json:"selected_tags,omitempty"`          // 选中的节点标签
+	AutoSyncCustomRules       *bool    `json:"auto_sync_custom_rules,omitempty"`
+	SelectedCustomRuleIDs     []int64  `json:"selected_custom_rule_ids,omitempty"`
+	SelectedOverrideScriptIDs []int64  `json:"selected_override_script_ids,omitempty"`
+	TemplateFilename          *string  `json:"template_filename,omitempty"`
+	SelectedTags              []string `json:"selected_tags,omitempty"`
 	CustomShortCode     *string  `json:"custom_short_code,omitempty"`      // 自定义短链接码
 	ExpireAt            *string  `json:"expire_at,omitempty"`
 	RawOutput           *bool    `json:"raw_output,omitempty"` // 非Clash配置，直接输出原始内容
@@ -677,9 +685,11 @@ type subscribeFileDTO struct {
 	Type                string     `json:"type"`
 	Filename            string     `json:"filename"`
 	ExpireAt            *time.Time `json:"expire_at,omitempty"`
-	AutoSyncCustomRules bool       `json:"auto_sync_custom_rules"`
-	TemplateFilename    string     `json:"template_filename"`
-	SelectedTags        []string   `json:"selected_tags"`
+	AutoSyncCustomRules       bool     `json:"auto_sync_custom_rules"`
+	SelectedCustomRuleIDs     []int64  `json:"selected_custom_rule_ids"`
+	SelectedOverrideScriptIDs []int64  `json:"selected_override_script_ids"`
+	TemplateFilename          string   `json:"template_filename"`
+	SelectedTags              []string `json:"selected_tags"`
 	CustomShortCode     string     `json:"custom_short_code"`
 	RawOutput           bool       `json:"raw_output"`
 	TrafficLimit        *float64   `json:"traffic_limit"`
@@ -694,22 +704,32 @@ func convertSubscribeFile(file storage.SubscribeFile) subscribeFileDTO {
 	if selectedTags == nil {
 		selectedTags = []string{}
 	}
+	ruleIDs := file.SelectedCustomRuleIDs
+	if ruleIDs == nil {
+		ruleIDs = []int64{}
+	}
+	scriptIDs := file.SelectedOverrideScriptIDs
+	if scriptIDs == nil {
+		scriptIDs = []int64{}
+	}
 	return subscribeFileDTO{
-		ID:                  file.ID,
-		Name:                file.Name,
-		Description:         file.Description,
-		Type:                file.Type,
-		Filename:            file.Filename,
-		ExpireAt:            file.ExpireAt,
-		AutoSyncCustomRules: file.AutoSyncCustomRules,
-		TemplateFilename:    file.TemplateFilename,
-		SelectedTags:        selectedTags,
-		CustomShortCode:     file.CustomShortCode,
-		RawOutput:           file.RawOutput,
-		TrafficLimit:        file.TrafficLimit,
-		StatsServerIDs:      file.StatsServerIDs,
-		CreatedAt:           file.CreatedAt,
-		UpdatedAt:           file.UpdatedAt,
+		ID:                        file.ID,
+		Name:                      file.Name,
+		Description:               file.Description,
+		Type:                      file.Type,
+		Filename:                  file.Filename,
+		ExpireAt:                  file.ExpireAt,
+		AutoSyncCustomRules:       file.AutoSyncCustomRules,
+		SelectedCustomRuleIDs:     ruleIDs,
+		SelectedOverrideScriptIDs: scriptIDs,
+		TemplateFilename:          file.TemplateFilename,
+		SelectedTags:              selectedTags,
+		CustomShortCode:           file.CustomShortCode,
+		RawOutput:                 file.RawOutput,
+		TrafficLimit:              file.TrafficLimit,
+		StatsServerIDs:            file.StatsServerIDs,
+		CreatedAt:                 file.CreatedAt,
+		UpdatedAt:                 file.UpdatedAt,
 	}
 }
 

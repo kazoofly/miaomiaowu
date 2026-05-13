@@ -92,36 +92,38 @@ func NewApplyCustomRulesHandler(repo *storage.TrafficRepository) http.Handler {
 	})
 }
 
-// applyCustomRulesToYaml applies enabled custom rules to the YAML data
-// Returns modified YAML and list of added proxy groups
-func applyCustomRulesToYaml(ctx context.Context, repo *storage.TrafficRepository, yamlData []byte) ([]byte, []string, error) {
-	// Get enabled custom rules first
+func applyCustomRulesToYamlFiltered(ctx context.Context, repo *storage.TrafficRepository, yamlData []byte, selectedIDs map[int64]bool) ([]byte, []string, error) {
 	rules, err := repo.ListEnabledCustomRules(ctx, "")
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get custom rules: %w", err)
+	}
+
+	if len(selectedIDs) > 0 {
+		filtered := rules[:0]
+		for _, r := range rules {
+			if selectedIDs[r.ID] {
+				filtered = append(filtered, r)
+			}
+		}
+		rules = filtered
 	}
 
 	if len(rules) == 0 {
 		return yamlData, nil, nil
 	}
 
-	// Parse YAML data as Node to preserve structure and order
 	var rootNode yaml.Node
 	if err := yaml.Unmarshal(yamlData, &rootNode); err != nil {
 		return nil, nil, fmt.Errorf("failed to parse YAML: %w", err)
 	}
-
-	// Get the document node
 	if rootNode.Kind != yaml.DocumentNode || len(rootNode.Content) == 0 {
 		return yamlData, nil, nil
 	}
-
 	docNode := rootNode.Content[0]
 	if docNode.Kind != yaml.MappingNode {
 		return yamlData, nil, nil
 	}
 
-	// Apply each rule based on its type using Node API
 	for _, rule := range rules {
 		switch rule.Type {
 		case "dns":
@@ -133,10 +135,8 @@ func applyCustomRulesToYaml(ctx context.Context, repo *storage.TrafficRepository
 		}
 	}
 
-	// Auto-add missing proxy groups referenced in rules
 	addedGroups := autoAddMissingProxyGroups(docNode)
 
-	// 校验应用规则后的配置
 	var configMap map[string]interface{}
 	var tempBuf bytes.Buffer
 	tempEncoder := yaml.NewEncoder(&tempBuf)
@@ -165,7 +165,6 @@ func applyCustomRulesToYaml(ctx context.Context, repo *storage.TrafficRepository
 		return nil, nil, fmt.Errorf("配置校验失败: %s", strings.Join(errorMessages, "; "))
 	}
 
-	// 如果有自动修复，使用修复后的配置
 	if validationResult.FixedConfig != nil {
 		fixedYAML, err := yaml.Marshal(validationResult.FixedConfig)
 		if err != nil {
@@ -174,8 +173,6 @@ func applyCustomRulesToYaml(ctx context.Context, repo *storage.TrafficRepository
 		if err := yaml.Unmarshal(fixedYAML, &rootNode); err != nil {
 			return nil, nil, fmt.Errorf("解析修复配置失败: %w", err)
 		}
-
-		// 记录自动修复的警告
 		for _, issue := range validationResult.Issues {
 			if issue.Level == validator.WarningLevel && issue.AutoFixed {
 				logger.Info("[应用自定义规则] [配置校验] 警告(已修复)", "message", issue.Message, "location", issue.Location)
@@ -183,19 +180,20 @@ func applyCustomRulesToYaml(ctx context.Context, repo *storage.TrafficRepository
 		}
 	}
 
-	// Fix short-id fields to use double quotes before marshaling
 	fixShortIdStyleInNode(&rootNode)
 
-	// Marshal the modified node (使用2空格缩进)
 	modifiedData, err := MarshalYAMLWithIndent(&rootNode)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to marshal modified YAML: %w", err)
 	}
 
-	// Post-process to remove quotes from strings with Unicode characters (emoji)
 	result := RemoveUnicodeEscapeQuotes(string(modifiedData))
-
 	return []byte(result), addedGroups, nil
+}
+
+// applyCustomRulesToYaml applies enabled custom rules to the YAML data
+func applyCustomRulesToYaml(ctx context.Context, repo *storage.TrafficRepository, yamlData []byte) ([]byte, []string, error) {
+	return applyCustomRulesToYamlFiltered(ctx, repo, yamlData, nil)
 }
 
 // removeDuplicateRulesCaseInsensitive removes rules from existing list that match newRules (case-insensitive)

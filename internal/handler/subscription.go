@@ -665,16 +665,21 @@ func (h *SubscriptionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	if hasSubscribeFile && subscribeFile.AutoSyncCustomRules {
 		if username := auth.UsernameFromContext(r.Context()); username != "" {
 			if sysCfg, err := h.repo.GetSystemConfig(r.Context()); err == nil && sysCfg.EnableOverrideScripts {
+				selectedScriptIDs := makeIDSet(subscribeFile.SelectedOverrideScriptIDs)
 				scripts, _ := h.repo.ListOverrideScripts(r.Context(), username, "post_fetch")
 				for _, s := range scripts {
-					if s.Enabled {
-						modified, err := h.runPostFetchScript(r.Context(), s.Content, data)
-						if err != nil {
-							logger.Info("[OverrideScript] post_fetch 脚本执行失败", "script", s.Name, "error", err)
-							continue
-						}
-						data = modified
+					if !s.Enabled {
+						continue
 					}
+					if len(selectedScriptIDs) > 0 && !selectedScriptIDs[s.ID] {
+						continue
+					}
+					modified, err := h.runPostFetchScript(r.Context(), s.Content, data)
+					if err != nil {
+						logger.Info("[OverrideScript] post_fetch 脚本执行失败", "script", s.Name, "error", err)
+						continue
+					}
+					data = modified
 				}
 			}
 		}
@@ -684,7 +689,8 @@ func (h *SubscriptionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	// 动态应用自定义规则
 	stepStart = time.Now()
 	if hasSubscribeFile && subscribeFile.AutoSyncCustomRules {
-		if modified, _, applyErr := applyCustomRulesToYaml(r.Context(), h.repo, data); applyErr != nil {
+		selectedRuleIDs := makeIDSet(subscribeFile.SelectedCustomRuleIDs)
+		if modified, _, applyErr := applyCustomRulesToYamlFiltered(r.Context(), h.repo, data, selectedRuleIDs); applyErr != nil {
 			logger.Info("[Subscription] 应用自定义规则失败", "error", applyErr)
 		} else {
 			data = modified
@@ -2228,6 +2234,17 @@ func marshalSubscriptionJSON(yamlData []byte) ([]byte, error) {
 
 	buf.WriteString("}\n")
 	return buf.Bytes(), nil
+}
+
+func makeIDSet(ids []int64) map[int64]bool {
+	if len(ids) == 0 {
+		return nil
+	}
+	m := make(map[int64]bool, len(ids))
+	for _, id := range ids {
+		m[id] = true
+	}
+	return m
 }
 
 var jsonProxyKeyPriority = []string{"name", "type", "server", "port"}
