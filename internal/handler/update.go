@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -112,12 +113,9 @@ func NewUpdateApplyHandler() http.Handler {
 			return
 		}
 
-		// 4. Backup current version (only for non-Docker)
-		if !isDocker() {
-			backupPath := targetPath + ".bak"
-			if err := copyFile(targetPath, backupPath); err != nil {
-				logger.Warn("[系统更新] 备份当前版本失败（非致命错误）", "error", err)
-			}
+		// 4. Backup current version
+		if err := backupBinary(targetPath); err != nil {
+			logger.Warn("[系统更新] 备份当前版本失败（非致命错误）", "error", err)
 		}
 
 		// 5. Replace binary
@@ -224,12 +222,9 @@ func NewUpdateApplySSEHandler() http.Handler {
 		}
 
 		// 4. Backup current version (only for non-Docker)
-		if !isDocker() {
-			sendProgress("backing_up", 0, "正在备份当前版本...")
-			backupPath := targetPath + ".bak"
-			if err := copyFile(targetPath, backupPath); err != nil {
-				logger.Warn("[系统更新] 备份当前版本失败（非致命错误）", "error", err)
-			}
+		sendProgress("backing_up", 0, "正在备份当前版本...")
+		if err := backupBinary(targetPath); err != nil {
+			logger.Warn("[系统更新] 备份当前版本失败（非致命错误）", "error", err)
 		}
 
 		// 5. Replace binary
@@ -544,6 +539,64 @@ func copyFile(src, dst string) error {
 	}
 
 	return dstFile.Sync()
+}
+
+const maxBackups = 2
+
+func backupBinary(targetPath string) error {
+	if _, err := os.Stat(targetPath); err != nil {
+		return nil
+	}
+
+	backupDir := "data"
+	if isDocker() {
+		backupDir = "/app/data"
+	}
+	if err := os.MkdirAll(backupDir, 0755); err != nil {
+		return fmt.Errorf("创建备份目录失败: %w", err)
+	}
+
+	backupName := fmt.Sprintf("server.bak.%s.%s",
+		version.Version,
+		time.Now().Format("20060102-150405"),
+	)
+	backupPath := filepath.Join(backupDir, backupName)
+
+	if err := copyFile(targetPath, backupPath); err != nil {
+		return err
+	}
+	logger.Info("[系统更新] 备份完成", "path", backupPath)
+
+	cleanOldBackups(backupDir)
+	return nil
+}
+
+func cleanOldBackups(dir string) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+
+	var backups []string
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasPrefix(e.Name(), "server.bak.") {
+			backups = append(backups, e.Name())
+		}
+	}
+
+	if len(backups) <= maxBackups {
+		return
+	}
+
+	sort.Strings(backups)
+	for _, name := range backups[:len(backups)-maxBackups] {
+		path := filepath.Join(dir, name)
+		if err := os.Remove(path); err != nil {
+			logger.Warn("[系统更新] 删除旧备份失败", "path", path, "error", err)
+		} else {
+			logger.Info("[系统更新] 已删除旧备份", "path", path)
+		}
+	}
 }
 
 // restartSelf restarts the current process
