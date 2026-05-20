@@ -250,6 +250,13 @@ MIT License
 <details>
 <summary>更新日志</summary>
 
+### v0.7.2 (2026-05-21)
+- 🌈 优化短链接编辑
+- 🌈 优化短链接编辑
+- 🌈 增加clash-to-loon配置转换#84
+- 🌈 loon增加anytls节点转换#85
+- 🌈 loon增加anytls节点转换#85
+- 🛠️ fix:覆写脚本选择框无法选中
 ### v0.7.1 (2026-05-15)
 - 🛠️ fix:shadowrocket 规则集格式错误
 - 🛠️ fix:ss协议密码错误base64
