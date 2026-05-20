@@ -240,6 +240,9 @@ func main() {
 	// All other paths go to the web handler
 	shortLinkHandler := handler.NewShortLinkHandler(repo, subscriptionHandler)
 	bruteForceProtector := handler.NewBruteForceProtector()
+	// 订阅获取频率限制(每 IP 每小时 30 次),覆盖根路径短链接与 /t/ 临时订阅,防枚举/抓取滥用。
+	subRateLimiter := handler.NewSubscriptionRateLimiter(30, time.Hour)
+	go subRateLimiter.StartCleanup(context.Background())
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		path := strings.Trim(r.URL.Path, "/")
 		clientIP := handler.GetClientIP(r)
@@ -247,6 +250,13 @@ func main() {
 		// 暴力探测封禁检查
 		if bruteForceProtector.IsBlocked(clientIP, r.URL.Path) {
 			http.NotFound(w, r)
+			return
+		}
+
+		isSubscriptionFetch := (strings.HasPrefix(path, "t/") && len(path) == 10) ||
+			(len(path) >= 2 && isAlphanumeric(path))
+		if isSubscriptionFetch && !subRateLimiter.Allow(clientIP) {
+			http.Error(w, "请求过于频繁，请稍后再试", http.StatusTooManyRequests)
 			return
 		}
 

@@ -154,6 +154,12 @@ func NewUserCustomShortCodeSelfHandler(repo *storage.TrafficRepository) http.Han
 			return
 		}
 
+		// 不向普通用户开放:用户短码现为系统随机生成(3-10 位)不可自定义,仅管理员保留入口。
+		if u, uerr := repo.GetUser(r.Context(), username); uerr != nil || u.Role != storage.RoleAdmin {
+			writeError(w, http.StatusForbidden, errors.New("该功能未开放"))
+			return
+		}
+
 		switch r.Method {
 		case http.MethodGet:
 			code, err := repo.GetUserCustomShortCode(r.Context(), username)

@@ -312,30 +312,6 @@ function SubscribeFilesPage() {
   // 自定义连接Popover状态
   const [customLinkFileId, setCustomLinkFileId] = useState<number | null>(null)
   const [customLinkInput, setCustomLinkInput] = useState('')
-  const [userShortCodeInput, setUserShortCodeInput] = useState('')
-
-  // 当前用户短码（链接后缀，所有订阅通用；自定义优先，否则系统自动短码）
-  const { data: userShortCodeData } = useQuery({
-    queryKey: ['user-custom-short-code'],
-    queryFn: async () => {
-      const { data } = await api.get('/api/user/custom-short-code')
-      return data as { custom_short_code: string; effective_short_code: string }
-    },
-  })
-  const updateUserShortCodeMutation = useMutation({
-    mutationFn: async (code: string) => {
-      await api.post('/api/user/custom-short-code', { custom_short_code: code })
-    },
-    onSuccess: () => {
-      toast.success('用户短码已更新')
-      queryClient.invalidateQueries({ queryKey: ['user-custom-short-code'] })
-      queryClient.invalidateQueries({ queryKey: ['subscribe-files'] })
-      queryClient.invalidateQueries({ queryKey: ['subscriptions'] })
-    },
-    onError: (e: any) => {
-      toast.error(e?.response?.data?.error || e?.response?.data?.message || '用户短码更新失败')
-    },
-  })
 
   // 编辑节点Dialog状态
   const [editNodesDialogOpen, setEditNodesDialogOpen] = useState(false)
@@ -3025,7 +3001,6 @@ function SubscribeFilesPage() {
                             if (open) {
                               setCustomLinkFileId(file.id)
                               setCustomLinkInput(code)
-                              setUserShortCodeInput(userShortCodeData?.effective_short_code || '')
                             } else {
                               setCustomLinkFileId(null)
                             }
@@ -3045,9 +3020,8 @@ function SubscribeFilesPage() {
                               )}
                             </Button>
                           </PopoverTrigger>
-                          <PopoverContent className="w-[220px] p-3" align="start">
+                          <PopoverContent className="w-[200px] p-3" align="start">
                             <div className="space-y-2">
-                              <p className="text-xs font-medium">自定义短码（文件）</p>
                               <p className="text-xs text-muted-foreground">仅字母数字</p>
                               <Input
                                 value={customLinkInput}
@@ -3105,24 +3079,6 @@ function SubscribeFilesPage() {
                                     清除
                                   </Button>
                                 )}
-                              </div>
-                              <div className="space-y-2 border-t pt-2">
-                                <p className="text-xs font-medium">用户短码（链接后缀，所有订阅通用）</p>
-                                <Input
-                                  value={userShortCodeInput}
-                                  onChange={(e) => setUserShortCodeInput(e.target.value)}
-                                  placeholder="3位字母/数字"
-                                  className="h-8 text-xs font-mono"
-                                />
-                                <Button
-                                  size="sm"
-                                  className="h-7 text-xs w-full"
-                                  disabled={updateUserShortCodeMutation.isPending}
-                                  onClick={() => updateUserShortCodeMutation.mutate(userShortCodeInput.trim())}
-                                >
-                                  保存用户短码
-                                </Button>
-                                <p className="text-[10px] text-muted-foreground">订阅短链接末尾即此短码；管理员可不设，用文件短码访问全部</p>
                               </div>
                             </div>
                           </PopoverContent>

@@ -2247,7 +2247,13 @@ func generateFileShortCode() (string, error) {
 // generateUserShortCode generates a random 3-character string for user short codes.
 func generateUserShortCode() (string, error) {
 	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	const length = 3
+
+	// 随机长度 3-10 位 + 不可由用户自定义,使短码不可枚举,消除自定义短码冲突可用性预言机。
+	lenByte := make([]byte, 1)
+	if _, err := rand.Read(lenByte); err != nil {
+		return "", fmt.Errorf("generate random length: %w", err)
+	}
+	length := 3 + int(lenByte[0])%8 // 3..10
 
 	bytes := make([]byte, length)
 	if _, err := rand.Read(bytes); err != nil {
