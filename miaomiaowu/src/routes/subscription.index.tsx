@@ -105,6 +105,8 @@ const CLIENT_TYPES = [
   { type: 'surgemac', name: 'Surge Mac', icon: surgeMacIcon },
   { type: 'clash-to-surge', name: 'Clash→Surge', icon: surgeIcon },
   { type: 'loon', name: 'Loon', icon: loonIcon },
+  { type: 'clash-to-loon', name: 'Clash→Loon', icon: loonIcon },
+  { type: 'clash-to-loon-kelee', name: 'Clash→Loon(kelee)', icon: loonIcon },
   { type: 'qx', name: 'QuantumultX', icon: quanxIcon },
   { type: 'egern', name: 'Egern', icon: egernIcon },
   { type: 'sing-box', name: 'sing-box', icon: singboxIcon },

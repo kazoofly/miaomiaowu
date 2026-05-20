@@ -728,7 +728,7 @@ func (h *SubscriptionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 
 		// Set content type and extension based on client type
 		switch clientType {
-		case "surge", "surgemac", "loon", "qx", "surfboard", "shadowrocket", "clash-to-surge":
+		case "surge", "surgemac", "loon", "qx", "surfboard", "shadowrocket", "clash-to-surge", "clash-to-loon", "clash-to-loon-kelee":
 			contentType = "text/plain; charset=utf-8"
 			ext = ".txt"
 		case "sing-box":
@@ -1331,7 +1331,7 @@ func (h *SubscriptionHandler) serveTokenInvalidResponse(w http.ResponseWriter, r
 
 			// 根据客户端类型设置content type和扩展名
 			switch clientType {
-			case "surge", "surgemac", "loon", "qx", "surfboard", "shadowrocket", "clash-to-surge":
+			case "surge", "surgemac", "loon", "qx", "surfboard", "shadowrocket", "clash-to-surge", "clash-to-loon", "clash-to-loon-kelee":
 				contentType = "text/plain; charset=utf-8"
 				ext = ".txt"
 			case "sing-box":
@@ -1426,6 +1426,20 @@ func (h *SubscriptionHandler) convertSubscription(ctx context.Context, yamlData 
 	// clash-to-surge 类型使用 BuildCompleteSurgeConfig 生成完整的 Surge 配置
 	if clientType == "clash-to-surge" {
 		return h.convertClashToSurge(config, proxies)
+	}
+
+	// clash-to-loon 类型使用 BuildCompleteLoonConfig 生成完整的 Loon 配置
+	if clientType == "clash-to-loon" {
+		return h.convertClashToLoon(config, proxies)
+	}
+
+	// clash-to-loon-kelee 使用 kelee 模板，只填充 Proxy 节点
+	if clientType == "clash-to-loon-kelee" {
+		result, err := substore.BuildLoonKeleeConfig(proxies)
+		if err != nil {
+			return nil, fmt.Errorf("failed to build Loon kelee config: %w", err)
+		}
+		return []byte(result), nil
 	}
 
 	factory := substore.GetDefaultFactory()
@@ -1586,6 +1600,107 @@ func (h *SubscriptionHandler) convertClashToSurge(config map[string]interface{},
 	}
 
 	return []byte(surgeConfig), nil
+}
+
+// convertClashToLoon converts Clash config to Loon format with full config
+func (h *SubscriptionHandler) convertClashToLoon(config map[string]interface{}, proxies []substore.Proxy) ([]byte, error) {
+	clashConfig := &substore.ClashConfig{}
+
+	if port, ok := config["port"].(int); ok {
+		clashConfig.Port = port
+	}
+	if socksPort, ok := config["socks-port"].(int); ok {
+		clashConfig.SocksPort = socksPort
+	}
+	if allowLan, ok := config["allow-lan"].(bool); ok {
+		clashConfig.AllowLan = allowLan
+	}
+	if mode, ok := config["mode"].(string); ok {
+		clashConfig.Mode = mode
+	}
+	if logLevel, ok := config["log-level"].(string); ok {
+		clashConfig.LogLevel = logLevel
+	}
+
+	// 解析 proxy-groups
+	if groupsRaw, ok := config["proxy-groups"].([]interface{}); ok {
+		for _, g := range groupsRaw {
+			if gMap, ok := g.(map[string]interface{}); ok {
+				group := substore.ClashProxyGroup{}
+				if name, ok := gMap["name"].(string); ok {
+					group.Name = name
+				}
+				if gType, ok := gMap["type"].(string); ok {
+					group.Type = gType
+				}
+				if url, ok := gMap["url"].(string); ok {
+					group.URL = url
+				}
+				if interval, ok := gMap["interval"].(int); ok {
+					group.Interval = interval
+				}
+				if tolerance, ok := gMap["tolerance"].(int); ok {
+					group.Tolerance = tolerance
+				}
+				if strategy, ok := gMap["strategy"].(string); ok {
+					group.Strategy = strategy
+				}
+				if proxiesArr, ok := gMap["proxies"].([]interface{}); ok {
+					for _, p := range proxiesArr {
+						if pStr, ok := p.(string); ok {
+							group.Proxies = append(group.Proxies, pStr)
+						}
+					}
+				}
+				clashConfig.ProxyGroups = append(clashConfig.ProxyGroups, group)
+			}
+		}
+	}
+
+	// 解析 rules
+	if rulesRaw, ok := config["rules"].([]interface{}); ok {
+		for _, r := range rulesRaw {
+			if rStr, ok := r.(string); ok {
+				clashConfig.Rules = append(clashConfig.Rules, rStr)
+			}
+		}
+	}
+
+	// 解析 rule-providers
+	if providersRaw, ok := config["rule-providers"].(map[string]interface{}); ok {
+		clashConfig.RuleProviders = make(map[string]substore.ClashRuleProvider)
+		for name, p := range providersRaw {
+			if pMap, ok := p.(map[string]interface{}); ok {
+				provider := substore.ClashRuleProvider{}
+				if pType, ok := pMap["type"].(string); ok {
+					provider.Type = pType
+				}
+				if behavior, ok := pMap["behavior"].(string); ok {
+					provider.Behavior = behavior
+				}
+				if url, ok := pMap["url"].(string); ok {
+					provider.URL = url
+				}
+				if path, ok := pMap["path"].(string); ok {
+					provider.Path = path
+				}
+				if interval, ok := pMap["interval"].(int); ok {
+					provider.Interval = interval
+				}
+				if format, ok := pMap["format"].(string); ok {
+					provider.Format = format
+				}
+				clashConfig.RuleProviders[name] = provider
+			}
+		}
+	}
+
+	loonConfig, err := substore.BuildCompleteLoonConfig(clashConfig, proxies)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build Loon config: %w", err)
+	}
+
+	return []byte(loonConfig), nil
 }
 
 // fixWireGuardAllowedIPs fixes allowed-ips field type for WireGuard nodes
