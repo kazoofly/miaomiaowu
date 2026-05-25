@@ -28,6 +28,7 @@ type userConfigRequest struct {
 	EnableProxyProvider      bool    `json:"enable_proxy_provider"`
 	NodeOrder                []int64 `json:"node_order"`
 	NodeNameFilter           string  `json:"node_name_filter"`
+	AppendSubInfo            bool    `json:"append_sub_info"`
 	ProxyGroupsSourceURL     string  `json:"proxy_groups_source_url"`
 	ClientCompatibilityMode  bool    `json:"client_compatibility_mode"`
 	SilentMode               bool    `json:"silent_mode"`
@@ -54,6 +55,7 @@ type userConfigResponse struct {
 	EnableProxyProvider      bool    `json:"enable_proxy_provider"`
 	NodeOrder                []int64 `json:"node_order"`
 	NodeNameFilter           string  `json:"node_name_filter"`
+	AppendSubInfo            bool    `json:"append_sub_info"`
 	ProxyGroupsSourceURL     string  `json:"proxy_groups_source_url"`
 	ClientCompatibilityMode  bool    `json:"client_compatibility_mode"`
 	SilentMode               bool    `json:"silent_mode"`
@@ -115,6 +117,7 @@ func handleGetUserConfig(w http.ResponseWriter, r *http.Request, repo *storage.T
 				EnableProxyProvider:      false,
 				NodeOrder:                []int64{},
 				NodeNameFilter:           "剩余|流量|到期|订阅|时间|重置",
+				AppendSubInfo:            false,
 				ProxyGroupsSourceURL:     systemConfig.ProxyGroupsSourceURL,
 				ClientCompatibilityMode:  systemConfig.ClientCompatibilityMode,
 				SilentMode:               systemConfig.SilentMode,
@@ -149,6 +152,7 @@ func handleGetUserConfig(w http.ResponseWriter, r *http.Request, repo *storage.T
 		EnableProxyProvider:      settings.EnableProxyProvider,
 		NodeOrder:                settings.NodeOrder,
 		NodeNameFilter:           settings.NodeNameFilter,
+		AppendSubInfo:            settings.AppendSubInfo,
 		ProxyGroupsSourceURL:     systemConfig.ProxyGroupsSourceURL,
 		ClientCompatibilityMode:  systemConfig.ClientCompatibilityMode,
 		SilentMode:               systemConfig.SilentMode,
@@ -230,6 +234,7 @@ func handleUpdateUserConfig(w http.ResponseWriter, r *http.Request, repo *storag
 		EnableProxyProvider: payload.EnableProxyProvider,
 		NodeOrder:           payload.NodeOrder,
 		NodeNameFilter:      payload.NodeNameFilter,
+		AppendSubInfo:       payload.AppendSubInfo,
 	}
 
 	if err := repo.UpsertUserSettings(r.Context(), settings); err != nil {
@@ -306,6 +311,7 @@ func handleUpdateUserConfig(w http.ResponseWriter, r *http.Request, repo *storag
 		EnableProxyProvider:      settings.EnableProxyProvider,
 		NodeOrder:                settings.NodeOrder,
 		NodeNameFilter:           settings.NodeNameFilter,
+		AppendSubInfo:            settings.AppendSubInfo,
 		ProxyGroupsSourceURL:     proxyGroupsSourceURL,
 		ClientCompatibilityMode:  payload.ClientCompatibilityMode,
 		SilentMode:               payload.SilentMode,

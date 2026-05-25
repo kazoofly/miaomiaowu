@@ -411,6 +411,12 @@ func syncSingleExternalSubscription(ctx context.Context, client *http.Client, re
 		}
 	}
 
+	// Build subscription info suffix for node names
+	subInfoSuffix := ""
+	if settings.AppendSubInfo && (sub.Total > 0 || sub.Expire != nil) {
+		subInfoSuffix = buildSubInfoSuffix(sub)
+	}
+
 	// Convert to storage.Node format
 	nodesToUpdate := make([]storage.Node, 0, len(proxies))
 
@@ -423,6 +429,12 @@ func syncSingleExternalSubscription(ctx context.Context, client *http.Client, re
 		proxyName, ok := proxyMap["name"].(string)
 		if !ok || proxyName == "" {
 			continue
+		}
+
+		// Append subscription info to node name
+		if subInfoSuffix != "" {
+			proxyName += subInfoSuffix
+			proxyMap["name"] = proxyName
 		}
 
 		// Marshal proxy to JSON for storage
@@ -1438,4 +1450,43 @@ func copyMapForSync(m map[string]any) map[string]any {
 		}
 	}
 	return result
+}
+
+// buildSubInfoSuffix builds a suffix string with remaining traffic and days for node names.
+// Example output: " 398.22GB📊 26Days⏳"
+func buildSubInfoSuffix(sub storage.ExternalSubscription) string {
+	var parts []string
+
+	if sub.Total > 0 {
+		used := sub.Upload + sub.Download
+		remaining := sub.Total - used
+		if remaining < 0 {
+			remaining = 0
+		}
+		parts = append(parts, formatTrafficShort(remaining)+"📊")
+	}
+
+	if sub.Expire != nil {
+		days := int(time.Until(*sub.Expire).Hours() / 24)
+		if days < 0 {
+			days = 0
+		}
+		parts = append(parts, fmt.Sprintf("%dDays⏳", days))
+	}
+
+	if len(parts) == 0 {
+		return ""
+	}
+	return " " + strings.Join(parts, " ")
+}
+
+func formatTrafficShort(bytes int64) string {
+	const (
+		gb = 1024 * 1024 * 1024
+		mb = 1024 * 1024
+	)
+	if bytes >= gb {
+		return fmt.Sprintf("%.2fGB", float64(bytes)/float64(gb))
+	}
+	return fmt.Sprintf("%.0fMB", float64(bytes)/float64(mb))
 }

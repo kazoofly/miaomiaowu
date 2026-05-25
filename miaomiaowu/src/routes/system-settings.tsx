@@ -53,6 +53,7 @@ interface UserConfig {
   silent_mode: boolean
   silent_mode_timeout: number
   node_name_filter: string
+  append_sub_info: boolean
   enable_sub_info_nodes: boolean
   sub_info_expire_prefix: string
   sub_info_traffic_prefix: string
@@ -89,6 +90,7 @@ function SystemSettingsPage() {
   const [silentMode, setSilentMode] = useState(false)
   const [silentModeTimeout, setSilentModeTimeout] = useState(15)
   const [nodeNameFilter, setNodeNameFilter] = useState('剩余|流量|到期|订阅|时间|重置')
+  const [appendSubInfo, setAppendSubInfo] = useState(false)
   const [enableSubInfoNodes, setEnableSubInfoNodes] = useState(false)
   const [subInfoExpirePrefix, setSubInfoExpirePrefix] = useState('📅过期时间')
   const [subInfoTrafficPrefix, setSubInfoTrafficPrefix] = useState('⌛剩余流量')
@@ -191,6 +193,7 @@ function SystemSettingsPage() {
       setSilentMode(userConfig.silent_mode || false)
       setSilentModeTimeout(userConfig.silent_mode_timeout || 15)
       setNodeNameFilter(userConfig.node_name_filter ?? '剩余|流量|到期|订阅|时间|重置')
+      setAppendSubInfo(userConfig.append_sub_info || false)
       setEnableSubInfoNodes(userConfig.enable_sub_info_nodes || false)
       setSubInfoExpirePrefix(userConfig.sub_info_expire_prefix || '📅过期时间')
       setSubInfoTrafficPrefix(userConfig.sub_info_traffic_prefix || '⌛剩余流量')
@@ -225,6 +228,7 @@ function SystemSettingsPage() {
       setSilentMode(variables.silent_mode)
       setSilentModeTimeout(variables.silent_mode_timeout)
       setNodeNameFilter(variables.node_name_filter)
+      setAppendSubInfo(variables.append_sub_info)
       setEnableSubInfoNodes(variables.enable_sub_info_nodes)
       setSubInfoExpirePrefix(variables.sub_info_expire_prefix)
       setSubInfoTrafficPrefix(variables.sub_info_traffic_prefix)
@@ -257,6 +261,7 @@ function SystemSettingsPage() {
       silent_mode: silentMode,
       silent_mode_timeout: silentModeTimeout,
       node_name_filter: nodeNameFilter,
+      append_sub_info: appendSubInfo,
       enable_sub_info_nodes: enableSubInfoNodes,
       sub_info_expire_prefix: subInfoExpirePrefix,
       sub_info_traffic_prefix: subInfoTrafficPrefix,
@@ -302,6 +307,28 @@ function SystemSettingsPage() {
                   id='sync-traffic'
                   checked={syncTraffic}
                   onCheckedChange={(checked) => updateConfig({ sync_traffic: checked })}
+                  disabled={loadingConfig || updateConfigMutation.isPending}
+                />
+              </div>
+
+              <div className='flex items-center justify-between'>
+                <div className='flex items-center gap-2'>
+                  <Label htmlFor='append-sub-info' className='cursor-pointer'>
+                    节点名称追加订阅信息
+                  </Label>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <CircleHelp className='h-4 w-4 text-muted-foreground cursor-help' />
+                    </TooltipTrigger>
+                    <TooltipContent side='right' className='max-w-xs'>
+                      <p>开启后，同步外部订阅时在节点名称后追加剩余流量和剩余天数，例如：节点名 398.22GB📊 26Days⏳</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <Switch
+                  id='append-sub-info'
+                  checked={appendSubInfo}
+                  onCheckedChange={(checked) => updateConfig({ append_sub_info: checked })}
                   disabled={loadingConfig || updateConfigMutation.isPending}
                 />
               </div>
