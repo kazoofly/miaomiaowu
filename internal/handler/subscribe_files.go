@@ -56,6 +56,10 @@ func (h *subscribeFilesHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 		h.handleUpload(w, r)
 	case path == "create-from-config" && r.Method == http.MethodPost:
 		h.handleCreateFromConfig(w, r)
+	case strings.HasSuffix(path, "/users") && r.Method == http.MethodGet:
+		// GET /api/admin/subscribe-files/{id}/users
+		idStr := strings.TrimSuffix(path, "/users")
+		h.handleGetSubscriptionUsers(w, r, idStr)
 	case strings.HasSuffix(path, "/content") && r.Method == http.MethodGet:
 		// GET /api/admin/subscribe-files/{filename}/content
 		filename := strings.TrimSuffix(path, "/content")
@@ -1541,4 +1545,23 @@ func RefreshSubscriptionsByTemplate(repo *storage.TrafficRepository, username st
 	}
 
 	logger.Info("[模板刷新] 刷新完成", "template", templateFilename, "total", len(files), "success", successCount)
+}
+
+func (h *subscribeFilesHandler) handleGetSubscriptionUsers(w http.ResponseWriter, r *http.Request, idStr string) {
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		writeBadRequest(w, "invalid subscription file ID")
+		return
+	}
+
+	users, err := h.repo.GetUsersBySubscriptionID(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if users == nil {
+		users = []storage.UserShortCodeInfo{}
+	}
+
+	respondJSON(w, http.StatusOK, map[string]any{"users": users})
 }

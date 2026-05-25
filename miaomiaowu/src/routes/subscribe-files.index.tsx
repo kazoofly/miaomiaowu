@@ -312,6 +312,7 @@ function SubscribeFilesPage() {
   // 自定义连接Popover状态
   const [customLinkFileId, setCustomLinkFileId] = useState<number | null>(null)
   const [customLinkInput, setCustomLinkInput] = useState('')
+  const [userShortCodes, setUserShortCodes] = useState<Record<string, string>>({})
 
   // 编辑节点Dialog状态
   const [editNodesDialogOpen, setEditNodesDialogOpen] = useState(false)
@@ -711,6 +712,30 @@ function SubscribeFilesPage() {
       setEditMetadataDialogOpen(false)
       setEditingMetadata(null)
       setMetadataForm({ name: '', description: '', filename: '', template_filename: '', selected_tags: [], traffic_limit: '', stats_server_ids: '' })
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.error || '更新失败')
+    },
+  })
+
+  // 查询订阅关联的用户短码
+  const subscriptionUsersQuery = useQuery({
+    queryKey: ['subscription-users', customLinkFileId],
+    queryFn: async () => {
+      const response = await api.get(`/api/admin/subscribe-files/${customLinkFileId}/users`)
+      return response.data.users as Array<{ username: string; user_short_code: string; custom_user_short_code: string }>
+    },
+    enabled: customLinkFileId !== null,
+  })
+
+  // 更新用户自定义短码
+  const updateUserShortCodeMutation = useMutation({
+    mutationFn: async (payload: { username: string; custom_short_code: string }) => {
+      await api.post('/api/admin/users/custom-short-code', payload)
+    },
+    onSuccess: (_data, variables) => {
+      toast.success(`${variables.username} 短链接已更新`)
+      queryClient.invalidateQueries({ queryKey: ['subscription-users', customLinkFileId] })
     },
     onError: (error: any) => {
       toast.error(error.response?.data?.error || '更新失败')
@@ -3001,6 +3026,7 @@ function SubscribeFilesPage() {
                             if (open) {
                               setCustomLinkFileId(file.id)
                               setCustomLinkInput(code)
+                              setUserShortCodes({})
                             } else {
                               setCustomLinkFileId(null)
                             }
@@ -3020,9 +3046,9 @@ function SubscribeFilesPage() {
                               )}
                             </Button>
                           </PopoverTrigger>
-                          <PopoverContent className="w-[200px] p-3" align="start">
+                          <PopoverContent className="w-[280px] p-3" align="start">
                             <div className="space-y-2">
-                              <p className="text-xs text-muted-foreground">仅字母数字</p>
+                              <p className="text-xs text-muted-foreground">订阅短链接（仅字母数字）</p>
                               <Input
                                 value={customLinkInput}
                                 onChange={(e) => setCustomLinkInput(e.target.value)}
@@ -3081,6 +3107,46 @@ function SubscribeFilesPage() {
                                 )}
                               </div>
                             </div>
+                            {subscriptionUsersQuery.data && subscriptionUsersQuery.data.length > 0 && (
+                              <div className="mt-3 pt-3 border-t space-y-2">
+                                <p className="text-xs text-muted-foreground">用户短链接</p>
+                                {subscriptionUsersQuery.data.map((user) => {
+                                  const currentValue = userShortCodes[user.username] ?? (user.custom_user_short_code || user.user_short_code)
+                                  return (
+                                    <div key={user.username} className="space-y-1">
+                                      <Label className="text-xs font-normal text-muted-foreground">{user.username}</Label>
+                                      <div className="flex gap-1">
+                                        <Input
+                                          value={currentValue}
+                                          onChange={(e) => setUserShortCodes(prev => ({ ...prev, [user.username]: e.target.value }))}
+                                          placeholder="用户短码"
+                                          className="h-7 text-xs font-mono flex-1"
+                                        />
+                                        <Button
+                                          size="sm"
+                                          className="h-7 text-xs px-2"
+                                          disabled={updateUserShortCodeMutation.isPending}
+                                          onClick={() => {
+                                            const val = (userShortCodes[user.username] ?? currentValue).trim()
+                                            updateUserShortCodeMutation.mutate({
+                                              username: user.username,
+                                              custom_short_code: val,
+                                            })
+                                          }}
+                                        >
+                                          保存
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            )}
+                            {subscriptionUsersQuery.isLoading && (
+                              <div className="mt-3 pt-3 border-t">
+                                <p className="text-xs text-muted-foreground text-center">加载中...</p>
+                              </div>
+                            )}
                           </PopoverContent>
                         </Popover>
                       )

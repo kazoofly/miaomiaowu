@@ -3520,6 +3520,43 @@ func (r *TrafficRepository) UserHasAccessToSubscribeFile(ctx context.Context, us
 	return count > 0, nil
 }
 
+// UserShortCodeInfo holds a user's short code information.
+type UserShortCodeInfo struct {
+	Username            string `json:"username"`
+	UserShortCode       string `json:"user_short_code"`
+	CustomUserShortCode string `json:"custom_user_short_code"`
+}
+
+// GetUsersBySubscriptionID returns all users assigned to a subscription file with their short codes.
+func (r *TrafficRepository) GetUsersBySubscriptionID(ctx context.Context, subscriptionID int64) ([]UserShortCodeInfo, error) {
+	if r == nil || r.db == nil {
+		return nil, errors.New("traffic repository not initialized")
+	}
+
+	const stmt = `
+		SELECT ut.username, COALESCE(ut.user_short_code, ''), COALESCE(ut.custom_user_short_code, '')
+		FROM user_subscriptions us
+		INNER JOIN user_tokens ut ON us.username = ut.username
+		WHERE us.subscription_id = ?
+		ORDER BY ut.username ASC
+	`
+	rows, err := r.db.QueryContext(ctx, stmt, subscriptionID)
+	if err != nil {
+		return nil, fmt.Errorf("get users by subscription ID: %w", err)
+	}
+	defer rows.Close()
+
+	var users []UserShortCodeInfo
+	for rows.Next() {
+		var u UserShortCodeInfo
+		if err := rows.Scan(&u.Username, &u.UserShortCode, &u.CustomUserShortCode); err != nil {
+			return nil, fmt.Errorf("scan user short code: %w", err)
+		}
+		users = append(users, u)
+	}
+	return users, rows.Err()
+}
+
 // GetUserSubscriptions returns all subscriptions assigned to a user.
 func (r *TrafficRepository) GetUserSubscriptions(ctx context.Context, username string) ([]SubscribeFile, error) {
 	if r == nil || r.db == nil {
