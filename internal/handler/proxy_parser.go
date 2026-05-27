@@ -1513,6 +1513,60 @@ func parseMieruURL(uri string) (map[string]any, error) {
 	return node, nil
 }
 
+func parseSnellURL(uri string) (map[string]any, error) {
+	content := strings.TrimPrefix(uri, "snell://")
+	name := "Snell Node"
+	mainPart := content
+
+	if idx := strings.LastIndex(content, "#"); idx != -1 {
+		mainPart = content[:idx]
+		name, _ = url.QueryUnescape(content[idx+1:])
+	}
+
+	var queryParams map[string]string
+	if idx := strings.Index(mainPart, "?"); idx != -1 {
+		queryParams = parseQueryParams(mainPart[idx+1:])
+		mainPart = mainPart[:idx]
+	}
+
+	atIdx := strings.LastIndex(mainPart, "@")
+	if atIdx == -1 {
+		return nil, fmt.Errorf("invalid snell url: missing @")
+	}
+
+	password := mainPart[:atIdx]
+	serverPart := mainPart[atIdx+1:]
+	server, port := parseServerPortWithDefault(serverPart, 0)
+
+	node := map[string]any{
+		"name":   name,
+		"type":   "snell",
+		"server": server,
+		"port":   port,
+		"psk":    password,
+	}
+
+	if v := queryParams["version"]; v != "" {
+		if ver, err := strconv.Atoi(v); err == nil {
+			node["version"] = ver
+		}
+	} else {
+		node["version"] = 4
+	}
+
+	if obfs := queryParams["obfs"]; obfs != "" && obfs != "none" {
+		obfsOpts := map[string]any{"mode": obfs}
+		if host := queryParams["obfs-host"]; host != "" {
+			obfsOpts["host"] = host
+		} else if host := queryParams["obfs-hostname"]; host != "" {
+			obfsOpts["host"] = host
+		}
+		node["obfs-opts"] = obfsOpts
+	}
+
+	return node, nil
+}
+
 // ParseProxyURL parses a single proxy URL and returns Clash format
 func ParseProxyURL(uri string) (map[string]any, error) {
 	uri = strings.TrimSpace(uri)
@@ -1546,6 +1600,8 @@ func ParseProxyURL(uri string) (map[string]any, error) {
 		return parseNaiveURL(uri)
 	case strings.HasPrefix(uri, "mieru://"):
 		return parseMieruURL(uri)
+	case strings.HasPrefix(uri, "snell://"):
+		return parseSnellURL(uri)
 	default:
 		return nil, fmt.Errorf("unsupported protocol: %s", uri)
 	}

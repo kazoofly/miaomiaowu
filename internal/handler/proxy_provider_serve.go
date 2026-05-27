@@ -494,6 +494,8 @@ func parseProxyURI(uri string) (map[string]interface{}, error) {
 		return parseNaiveURI(uri)
 	case strings.HasPrefix(uri, "mieru://"):
 		return parseMieruURI(uri)
+	case strings.HasPrefix(uri, "snell://"):
+		return parseSnellURI(uri)
 	default:
 		return nil, fmt.Errorf("unsupported protocol")
 	}
@@ -2361,6 +2363,70 @@ func parseMieruURI(uri string) (map[string]interface{}, error) {
 	}
 	if tp := params["traffic-pattern"]; tp != "" {
 		proxy["traffic-pattern"] = tp
+	}
+
+	return proxy, nil
+}
+
+func parseSnellURI(uri string) (map[string]interface{}, error) {
+	content := strings.TrimPrefix(uri, "snell://")
+
+	name := "Snell Node"
+	if idx := strings.LastIndex(content, "#"); idx != -1 {
+		name = urlDecode(content[idx+1:])
+		content = content[:idx]
+	}
+
+	params := make(map[string]string)
+	if idx := strings.Index(content, "?"); idx != -1 {
+		paramStr := content[idx+1:]
+		content = content[:idx]
+		for _, kv := range strings.Split(paramStr, "&") {
+			if parts := strings.SplitN(kv, "=", 2); len(parts) == 2 {
+				params[parts[0]] = urlDecode(parts[1])
+			}
+		}
+	}
+
+	content = strings.TrimSuffix(content, "/")
+
+	atIdx := strings.LastIndex(content, "@")
+	if atIdx == -1 {
+		return nil, fmt.Errorf("invalid snell uri: missing @")
+	}
+
+	psk := content[:atIdx]
+	serverPort := content[atIdx+1:]
+
+	server, port := parseServerPort(serverPort)
+	if server == "" {
+		return nil, fmt.Errorf("invalid snell uri: invalid server")
+	}
+
+	proxy := map[string]interface{}{
+		"type":   "snell",
+		"name":   name,
+		"server": server,
+		"port":   port,
+		"psk":    psk,
+	}
+
+	if v := params["version"]; v != "" {
+		if ver, err := strconv.Atoi(v); err == nil {
+			proxy["version"] = ver
+		}
+	} else {
+		proxy["version"] = 4
+	}
+
+	if obfs := params["obfs"]; obfs != "" && obfs != "none" {
+		obfsOpts := map[string]interface{}{"mode": obfs}
+		if host := params["obfs-host"]; host != "" {
+			obfsOpts["host"] = host
+		} else if host := params["obfs-hostname"]; host != "" {
+			obfsOpts["host"] = host
+		}
+		proxy["obfs-opts"] = obfsOpts
 	}
 
 	return proxy, nil

@@ -20,6 +20,7 @@ const PROTOCOL_COLORS: Record<string, string> = {
   hysteria2: 'bg-indigo-500/10 text-indigo-700 dark:text-indigo-400',
   hysteria: 'bg-indigo-500/10 text-indigo-700 dark:text-indigo-400',
   tuic: 'bg-cyan-500/10 text-cyan-700 dark:text-cyan-400',
+  snell: 'bg-lime-500/10 text-lime-700 dark:text-lime-400',
 }
 
 function relTime(t: string) {
