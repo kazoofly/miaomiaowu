@@ -486,6 +486,11 @@ func (h *subscribeFilesHandler) handleUpdate(w http.ResponseWriter, r *http.Requ
 		existing.SelectedTags = req.SelectedTags
 		tagsChanged = true
 	}
+	selectedNodesChanged := false
+	if req.SelectedNodeIDs != nil {
+		existing.SelectedNodeIDs = req.SelectedNodeIDs
+		selectedNodesChanged = true
+	}
 	// 更新自定义短链接码
 	if req.CustomShortCode != nil {
 		code := strings.TrimSpace(*req.CustomShortCode)
@@ -558,6 +563,15 @@ func (h *subscribeFilesHandler) handleUpdate(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	// 如果提供了新内容，覆盖更新订阅文件内容
+	if req.Content != nil {
+		contentPath := filepath.Join("subscribes", updated.Filename)
+		if err := os.WriteFile(contentPath, []byte(*req.Content), 0644); err != nil {
+			writeError(w, http.StatusInternalServerError, errors.New("更新订阅文件内容失败: "+err.Error()))
+			return
+		}
+	}
+
 	// 如果文件名发生变化，重命名物理文件
 	if needRenameFile {
 		oldPath := filepath.Join("subscribes", oldFilename)
@@ -577,8 +591,8 @@ func (h *subscribeFilesHandler) handleUpdate(w http.ResponseWriter, r *http.Requ
 		// 如果旧文件不存在，只更新数据库记录，不报错
 	}
 
-	// 如果绑定了V3模板或标签变化，从模板重新生成订阅文件
-	if (templateJustBound || tagsChanged) && updated.TemplateFilename != "" {
+	// 如果绑定了V3模板或标签/节点变化，从模板重新生成订阅文件
+	if (templateJustBound || tagsChanged || selectedNodesChanged) && updated.TemplateFilename != "" {
 		go func() {
 			ctx := context.Background()
 			username := auth.UsernameFromContext(r.Context())
@@ -675,11 +689,13 @@ type subscribeFileRequest struct {
 	SelectedOverrideScriptIDs []int64  `json:"selected_override_script_ids,omitempty"`
 	TemplateFilename          *string  `json:"template_filename,omitempty"`
 	SelectedTags              []string `json:"selected_tags,omitempty"`
+	SelectedNodeIDs           []int64  `json:"selected_node_ids,omitempty"`
 	CustomShortCode           *string  `json:"custom_short_code,omitempty"` // 自定义短链接码
 	ExpireAt                  *string  `json:"expire_at,omitempty"`
 	RawOutput                 *bool    `json:"raw_output,omitempty"` // 非Clash配置，直接输出原始内容
 	TrafficLimit              *float64 `json:"traffic_limit,omitempty"`
 	StatsServerIDs            *string  `json:"stats_server_ids,omitempty"`
+	Content                   *string  `json:"content,omitempty"`
 }
 
 type subscribeFileDTO struct {
@@ -694,6 +710,7 @@ type subscribeFileDTO struct {
 	SelectedOverrideScriptIDs []int64    `json:"selected_override_script_ids"`
 	TemplateFilename          string     `json:"template_filename"`
 	SelectedTags              []string   `json:"selected_tags"`
+	SelectedNodeIDs           []int64    `json:"selected_node_ids"`
 	CustomShortCode           string     `json:"custom_short_code"`
 	RawOutput                 bool       `json:"raw_output"`
 	TrafficLimit              *float64   `json:"traffic_limit"`
@@ -716,6 +733,10 @@ func convertSubscribeFile(file storage.SubscribeFile) subscribeFileDTO {
 	if scriptIDs == nil {
 		scriptIDs = []int64{}
 	}
+	nodeIDs := file.SelectedNodeIDs
+	if nodeIDs == nil {
+		nodeIDs = []int64{}
+	}
 	return subscribeFileDTO{
 		ID:                        file.ID,
 		Name:                      file.Name,
@@ -728,6 +749,7 @@ func convertSubscribeFile(file storage.SubscribeFile) subscribeFileDTO {
 		SelectedOverrideScriptIDs: scriptIDs,
 		TemplateFilename:          file.TemplateFilename,
 		SelectedTags:              selectedTags,
+		SelectedNodeIDs:           nodeIDs,
 		CustomShortCode:           file.CustomShortCode,
 		RawOutput:                 file.RawOutput,
 		TrafficLimit:              file.TrafficLimit,
@@ -789,6 +811,7 @@ func (h *subscribeFilesHandler) handleCreateFromConfig(w http.ResponseWriter, r 
 		Content          string   `json:"content"`
 		TemplateFilename string   `json:"template_filename"` // V3 模板文件名
 		SelectedTags     []string `json:"selected_tags"`     // V3 模式下选择的标签
+		SelectedNodeIDs  []int64  `json:"selected_node_ids"`
 		TrafficLimit     *float64 `json:"traffic_limit"`
 		StatsServerIDs   string   `json:"stats_server_ids"`
 	}
@@ -933,6 +956,7 @@ func (h *subscribeFilesHandler) handleCreateFromConfig(w http.ResponseWriter, r 
 		Filename:         filename,
 		TemplateFilename: req.TemplateFilename,
 		SelectedTags:     req.SelectedTags,
+		SelectedNodeIDs:  req.SelectedNodeIDs,
 		TrafficLimit:     req.TrafficLimit,
 		StatsServerIDs:   req.StatsServerIDs,
 	}
@@ -1385,15 +1409,23 @@ func (h *subscribeFilesHandler) regenerateFromTemplate(ctx context.Context, user
 		return fmt.Errorf("获取节点列表失败: %w", err)
 	}
 
-	// 构建选中标签的 map 用于快速查找
+	// 构建选中标签和节点 ID 的过滤条件
 	selectedTagsMap := make(map[string]bool)
 	for _, tag := range subscribeFile.SelectedTags {
 		selectedTagsMap[tag] = true
 	}
 	hasTagFilter := len(selectedTagsMap) > 0
+	selectedNodeIDMap := make(map[int64]bool)
+	for _, id := range subscribeFile.SelectedNodeIDs {
+		selectedNodeIDMap[id] = true
+	}
+	hasNodeSelection := len(selectedNodeIDMap) > 0
 
 	if hasTagFilter {
 		logger.Info("[模板生成] 启用标签过滤", "selected_tags", subscribeFile.SelectedTags, "tag_count", len(subscribeFile.SelectedTags))
+	}
+	if hasNodeSelection {
+		logger.Info("[模板生成] 启用节点选择过滤", "selected_node_ids_count", len(subscribeFile.SelectedNodeIDs))
 	}
 
 	// 构建节点 ID -> 名称映射（用于链式代理解析）
@@ -1411,6 +1443,10 @@ func (h *subscribeFilesHandler) regenerateFromTemplate(ctx context.Context, user
 			continue // 跳过禁用的节点
 		}
 		enabledCount++
+		// 如果设置了节点选择，优先按节点 ID 过滤
+		if hasNodeSelection && !selectedNodeIDMap[node.ID] {
+			continue
+		}
 		// 如果设置了标签过滤，只使用选中标签的节点
 		if hasTagFilter && !node.HasAnyTag(selectedTagsMap) {
 			filteredByTagCount++

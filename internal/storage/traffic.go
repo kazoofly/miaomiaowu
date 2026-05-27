@@ -237,6 +237,7 @@ type SubscribeFile struct {
 	SelectedOverrideScriptIDs []int64 // 选中的覆写脚本 ID，为空且开启覆写时表示应用全部已启用脚本
 	TemplateFilename         string  // 绑定的 V3 模板文件名，为空表示未绑定模板
 	SelectedTags             []string // 选中的节点标签，为空表示使用所有节点
+	SelectedNodeIDs          []int64 // 绑定到订阅的节点 ID，为空表示未显式绑定
 	RawOutput           bool       // 非Clash配置，直接输出原始内容
 	SortOrder           int        // 排序权重，值越小越靠前
 	TrafficLimit        *float64   // 手动设置的总流量上限(GB)，nil表示跟随探针
@@ -275,6 +276,8 @@ type SystemConfig struct {
 	ClientCompatibilityMode bool   // Auto-filter incompatible nodes for clients
 	SilentMode              bool   // Silent mode: return 404 for all requests except subscription
 	SilentModeTimeout       int    // Minutes to allow access after subscription fetch (default 15)
+	BruteForceMaxFailures   int    // 暴力探测封禁阈值（默认 5）
+	BruteForceIPWhitelist   string // IP 白名单，逗号/换行分隔
 	EnableSubInfoNodes      bool   // Enable subscription info nodes (expire time and remaining traffic)
 	SubInfoExpirePrefix     string // Prefix for expire time node, default "📅过期时间"
 	SubInfoTrafficPrefix    string // Prefix for remaining traffic node, default "⌛剩余流量"
@@ -953,6 +956,14 @@ WHERE NOT EXISTS (SELECT 1 FROM system_config WHERE id = 1);
 		return err
 	}
 
+	// Add brute force settings to system_config table
+	if err := r.ensureSystemConfigColumn("brute_force_max_failures", "INTEGER NOT NULL DEFAULT 5"); err != nil {
+		return err
+	}
+	if err := r.ensureSystemConfigColumn("brute_force_ip_whitelist", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+
 	// Add enable_sub_info_nodes column to system_config table
 	if err := r.ensureSystemConfigColumn("enable_sub_info_nodes", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
@@ -1058,6 +1069,11 @@ CREATE INDEX IF NOT EXISTS idx_custom_rules_enabled ON custom_rules(enabled);
 
 	// 添加 selected_tags 字段，用于存储选中的节点标签（JSON 数组）
 	if err := r.ensureSubscribeFileColumn("selected_tags", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
+		return err
+	}
+
+	// 添加 selected_node_ids 字段，用于存储绑定到订阅的节点 ID（JSON 数组）
+	if err := r.ensureSubscribeFileColumn("selected_node_ids", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
 		return err
 	}
 
@@ -4711,6 +4727,7 @@ func (r *TrafficRepository) DeleteProxyProviderConfig(ctx context.Context, id in
 func (r *TrafficRepository) GetSystemConfig(ctx context.Context) (SystemConfig, error) {
 	const query = `
 SELECT proxy_groups_source_url, client_compatibility_mode, silent_mode, silent_mode_timeout,
+       COALESCE(brute_force_max_failures, 5), COALESCE(brute_force_ip_whitelist, ''),
        enable_sub_info_nodes, sub_info_expire_prefix, sub_info_traffic_prefix,
        COALESCE(enable_short_link, 1), COALESCE(enable_sub_traffic_header, 1), COALESCE(enable_override_scripts, 0),
        COALESCE(subscription_output_format, 'yaml'),
@@ -4723,12 +4740,13 @@ WHERE id = 1
 `
 
 	var cfg SystemConfig
-	var compatibilityMode, silentMode, silentModeTimeout, enableSubInfoNodes int
+	var compatibilityMode, silentMode, silentModeTimeout, bruteForceMaxFailures, enableSubInfoNodes int
 	var enableShortLinkInt, enableSubTrafficHeaderInt, enableOverrideScriptsInt int
 	var notifyEnabledInt, notifySubFetchInt, notifyLoginInt, notifyIPBanInt int
 	var notifySilentModeInt, notifyDailyTrafficInt, notifyExpiryInt int
 	err := r.db.QueryRowContext(ctx, query).Scan(
 		&cfg.ProxyGroupsSourceURL, &compatibilityMode, &silentMode, &silentModeTimeout,
+		&bruteForceMaxFailures, &cfg.BruteForceIPWhitelist,
 		&enableSubInfoNodes, &cfg.SubInfoExpirePrefix, &cfg.SubInfoTrafficPrefix,
 		&enableShortLinkInt, &enableSubTrafficHeaderInt, &enableOverrideScriptsInt,
 		&cfg.SubscriptionOutputFormat,
@@ -4741,6 +4759,8 @@ WHERE id = 1
 		if errors.Is(err, sql.ErrNoRows) {
 			return SystemConfig{
 				SilentModeTimeout:        15,
+				BruteForceMaxFailures:    5,
+				BruteForceIPWhitelist:    "",
 				SubInfoExpirePrefix:      "📅过期时间",
 				SubInfoTrafficPrefix:     "⌛剩余流量",
 				EnableShortLink:          true,
@@ -4755,6 +4775,10 @@ WHERE id = 1
 	cfg.ClientCompatibilityMode = compatibilityMode != 0
 	cfg.SilentMode = silentMode != 0
 	cfg.SilentModeTimeout = silentModeTimeout
+	cfg.BruteForceMaxFailures = bruteForceMaxFailures
+	if cfg.BruteForceMaxFailures <= 0 {
+		cfg.BruteForceMaxFailures = 5
+	}
 	if cfg.SilentModeTimeout <= 0 {
 		cfg.SilentModeTimeout = 15
 	}
@@ -4793,6 +4817,8 @@ SET proxy_groups_source_url = ?,
     client_compatibility_mode = ?,
     silent_mode = ?,
     silent_mode_timeout = ?,
+    brute_force_max_failures = ?,
+    brute_force_ip_whitelist = ?,
     enable_sub_info_nodes = ?,
     sub_info_expire_prefix = ?,
     sub_info_traffic_prefix = ?,
@@ -4843,8 +4869,14 @@ WHERE id = 1
 		subscriptionOutputFormat = "yaml"
 	}
 
+	bruteForceMaxFailures := cfg.BruteForceMaxFailures
+	if bruteForceMaxFailures <= 0 {
+		bruteForceMaxFailures = 5
+	}
+
 	result, err := r.db.ExecContext(ctx, updateStmt,
 		cfg.ProxyGroupsSourceURL, boolToInt(cfg.ClientCompatibilityMode), boolToInt(cfg.SilentMode), silentModeTimeout,
+		bruteForceMaxFailures, cfg.BruteForceIPWhitelist,
 		boolToInt(cfg.EnableSubInfoNodes), subInfoExpirePrefix, subInfoTrafficPrefix,
 		boolToInt(cfg.EnableShortLink), boolToInt(cfg.EnableSubTrafficHeader), boolToInt(cfg.EnableOverrideScripts),
 		subscriptionOutputFormat,
@@ -4866,12 +4898,14 @@ WHERE id = 1
 	if rowsAffected == 0 {
 		const insertStmt = `
 INSERT INTO system_config (id, proxy_groups_source_url, client_compatibility_mode, silent_mode, silent_mode_timeout,
+                           brute_force_max_failures, brute_force_ip_whitelist,
                            enable_sub_info_nodes, sub_info_expire_prefix, sub_info_traffic_prefix, enable_short_link,
                            enable_sub_traffic_header, enable_override_scripts)
-VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 		if _, err := r.db.ExecContext(ctx, insertStmt,
 			cfg.ProxyGroupsSourceURL, boolToInt(cfg.ClientCompatibilityMode), boolToInt(cfg.SilentMode), silentModeTimeout,
+			bruteForceMaxFailures, cfg.BruteForceIPWhitelist,
 			boolToInt(cfg.EnableSubInfoNodes), subInfoExpirePrefix, subInfoTrafficPrefix,
 			boolToInt(cfg.EnableShortLink), boolToInt(cfg.EnableSubTrafficHeader), boolToInt(cfg.EnableOverrideScripts),
 		); err != nil {

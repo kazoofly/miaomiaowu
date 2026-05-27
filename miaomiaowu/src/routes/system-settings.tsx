@@ -52,6 +52,8 @@ interface UserConfig {
   client_compatibility_mode: boolean
   silent_mode: boolean
   silent_mode_timeout: number
+  brute_force_max_failures: number
+  brute_force_ip_whitelist: string
   node_name_filter: string
   append_sub_info: boolean
   enable_sub_info_nodes: boolean
@@ -89,6 +91,8 @@ function SystemSettingsPage() {
   const [clientCompatibilityMode, setClientCompatibilityMode] = useState(false)
   const [silentMode, setSilentMode] = useState(false)
   const [silentModeTimeout, setSilentModeTimeout] = useState(15)
+  const [bruteForceMaxFailures, setBruteForceMaxFailures] = useState(5)
+  const [bruteForceIPWhitelist, setBruteForceIPWhitelist] = useState('')
   const [nodeNameFilter, setNodeNameFilter] = useState('剩余|流量|到期|订阅|时间|重置')
   const [appendSubInfo, setAppendSubInfo] = useState(false)
   const [enableSubInfoNodes, setEnableSubInfoNodes] = useState(false)
@@ -192,6 +196,8 @@ function SystemSettingsPage() {
       setClientCompatibilityMode(userConfig.client_compatibility_mode || false)
       setSilentMode(userConfig.silent_mode || false)
       setSilentModeTimeout(userConfig.silent_mode_timeout || 15)
+      setBruteForceMaxFailures(userConfig.brute_force_max_failures || 5)
+      setBruteForceIPWhitelist(userConfig.brute_force_ip_whitelist || '')
       setNodeNameFilter(userConfig.node_name_filter ?? '剩余|流量|到期|订阅|时间|重置')
       setAppendSubInfo(userConfig.append_sub_info || false)
       setEnableSubInfoNodes(userConfig.enable_sub_info_nodes || false)
@@ -227,6 +233,8 @@ function SystemSettingsPage() {
       setClientCompatibilityMode(variables.client_compatibility_mode)
       setSilentMode(variables.silent_mode)
       setSilentModeTimeout(variables.silent_mode_timeout)
+      setBruteForceMaxFailures(variables.brute_force_max_failures)
+      setBruteForceIPWhitelist(variables.brute_force_ip_whitelist)
       setNodeNameFilter(variables.node_name_filter)
       setAppendSubInfo(variables.append_sub_info)
       setEnableSubInfoNodes(variables.enable_sub_info_nodes)
@@ -260,6 +268,8 @@ function SystemSettingsPage() {
       client_compatibility_mode: clientCompatibilityMode,
       silent_mode: silentMode,
       silent_mode_timeout: silentModeTimeout,
+      brute_force_max_failures: bruteForceMaxFailures,
+      brute_force_ip_whitelist: bruteForceIPWhitelist,
       node_name_filter: nodeNameFilter,
       append_sub_info: appendSubInfo,
       enable_sub_info_nodes: enableSubInfoNodes,
@@ -867,33 +877,82 @@ function SystemSettingsPage() {
                 </div>
               </div>
 
-              {/* 静默模式超时设置 */}
-              {silentMode && (
-                <div className='mt-4 space-y-2 rounded-lg border border-orange-200 bg-orange-50 p-3 dark:border-orange-900 dark:bg-orange-950'>
+              {/* 静默模式相关设置 */}
+              <div className='mt-4 space-y-4 rounded-lg border border-orange-200 bg-orange-50 p-3 dark:border-orange-900 dark:bg-orange-950'>
+                {silentMode && (
+                  <div className='space-y-2'>
+                    <div className='flex items-center gap-2'>
+                      <Label htmlFor='silent-mode-timeout'>恢复访问时长（分钟）</Label>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <CircleHelp className='h-4 w-4 text-muted-foreground cursor-help' />
+                        </TooltipTrigger>
+                        <TooltipContent side='top' className='max-w-xs'>
+                          <p>用户获取订阅后，服务器恢复访问的时长。</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
+                    <Input
+                      id='silent-mode-timeout'
+                      type='number'
+                      min={1}
+                      max={1440}
+                      value={silentModeTimeout}
+                      disabled={loadingConfig || updateConfigMutation.isPending}
+                      onChange={(e) => setSilentModeTimeout(parseInt(e.target.value) || 15)}
+                      onBlur={() => updateConfig({ silent_mode_timeout: silentModeTimeout })}
+                      className='max-w-32'
+                    />
+                  </div>
+                )}
+
+                <div className={`space-y-2 ${silentMode ? 'border-t pt-4' : ''}`}>
                   <div className='flex items-center gap-2'>
-                    <Label htmlFor='silent-mode-timeout'>恢复访问时长（分钟）</Label>
+                    <Label htmlFor='brute-force-max-failures'>封禁阈值（失败次数）</Label>
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <CircleHelp className='h-4 w-4 text-muted-foreground cursor-help' />
                       </TooltipTrigger>
                       <TooltipContent side='top' className='max-w-xs'>
-                        <p>用户获取订阅后，服务器恢复访问的时长。</p>
+                        <p>同一 IP 在 24 小时窗口内累计失败达到该次数后触发封禁。默认 5 次。</p>
                       </TooltipContent>
                     </Tooltip>
                   </div>
                   <Input
-                    id='silent-mode-timeout'
+                    id='brute-force-max-failures'
                     type='number'
                     min={1}
-                    max={1440}
-                    value={silentModeTimeout}
+                    max={9999}
+                    value={bruteForceMaxFailures}
                     disabled={loadingConfig || updateConfigMutation.isPending}
-                    onChange={(e) => setSilentModeTimeout(parseInt(e.target.value) || 15)}
-                    onBlur={() => updateConfig({ silent_mode_timeout: silentModeTimeout })}
+                    onChange={(e) => setBruteForceMaxFailures(parseInt(e.target.value) || 5)}
+                    onBlur={() => updateConfig({ brute_force_max_failures: bruteForceMaxFailures })}
                     className='max-w-32'
                   />
                 </div>
-              )}
+
+                <div className='space-y-2 border-t pt-4'>
+                  <div className='flex items-center gap-2'>
+                    <Label htmlFor='brute-force-ip-whitelist'>IP 白名单</Label>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <CircleHelp className='h-4 w-4 text-muted-foreground cursor-help' />
+                      </TooltipTrigger>
+                      <TooltipContent side='top' className='max-w-xs'>
+                        <p>白名单 IP 不参与暴力探测封禁统计。支持逗号或换行分隔多个 IP。</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
+                  <Input
+                    id='brute-force-ip-whitelist'
+                    value={bruteForceIPWhitelist}
+                    disabled={loadingConfig || updateConfigMutation.isPending}
+                    onChange={(e) => setBruteForceIPWhitelist(e.target.value)}
+                    onBlur={() => updateConfig({ brute_force_ip_whitelist: bruteForceIPWhitelist })}
+                    placeholder='1.1.1.1,8.8.8.8'
+                  />
+                </div>
+              </div>
 
               {/* 订阅信息节点 */}
               <div className='mt-4 space-y-3 rounded-lg border p-4'>

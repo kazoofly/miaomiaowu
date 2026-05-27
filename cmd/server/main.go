@@ -246,7 +246,8 @@ func main() {
 	// /t/{id} paths route to temporary subscription handler
 	// All other paths go to the web handler
 	shortLinkHandler := handler.NewShortLinkHandler(repo, subscriptionHandler)
-	bruteForceProtector := handler.NewBruteForceProtector()
+	sysCfg, _ := repo.GetSystemConfig(context.Background())
+	bruteForceProtector := handler.NewBruteForceProtector(sysCfg.BruteForceMaxFailures, sysCfg.BruteForceIPWhitelist)
 	// 订阅获取频率限制(每 IP 每 2 小时 30 次),覆盖根路径短链接与 /t/ 临时订阅,防枚举/抓取滥用。
 	subRateLimiter := handler.NewSubscriptionRateLimiter(30, 2*time.Hour)
 	go subRateLimiter.StartCleanup(context.Background())

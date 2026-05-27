@@ -33,6 +33,8 @@ type userConfigRequest struct {
 	ClientCompatibilityMode  bool    `json:"client_compatibility_mode"`
 	SilentMode               bool    `json:"silent_mode"`
 	SilentModeTimeout        int     `json:"silent_mode_timeout"`
+	BruteForceMaxFailures    int     `json:"brute_force_max_failures"`
+	BruteForceIPWhitelist    string  `json:"brute_force_ip_whitelist"`
 	EnableSubInfoNodes       bool    `json:"enable_sub_info_nodes"`
 	SubInfoExpirePrefix      string  `json:"sub_info_expire_prefix"`
 	SubInfoTrafficPrefix     string  `json:"sub_info_traffic_prefix"`
@@ -60,6 +62,8 @@ type userConfigResponse struct {
 	ClientCompatibilityMode  bool    `json:"client_compatibility_mode"`
 	SilentMode               bool    `json:"silent_mode"`
 	SilentModeTimeout        int     `json:"silent_mode_timeout"`
+	BruteForceMaxFailures    int     `json:"brute_force_max_failures"`
+	BruteForceIPWhitelist    string  `json:"brute_force_ip_whitelist"`
 	EnableSubInfoNodes       bool    `json:"enable_sub_info_nodes"`
 	SubInfoExpirePrefix      string  `json:"sub_info_expire_prefix"`
 	SubInfoTrafficPrefix     string  `json:"sub_info_traffic_prefix"`
@@ -122,6 +126,8 @@ func handleGetUserConfig(w http.ResponseWriter, r *http.Request, repo *storage.T
 				ClientCompatibilityMode:  systemConfig.ClientCompatibilityMode,
 				SilentMode:               systemConfig.SilentMode,
 				SilentModeTimeout:        systemConfig.SilentModeTimeout,
+				BruteForceMaxFailures:    systemConfig.BruteForceMaxFailures,
+				BruteForceIPWhitelist:    systemConfig.BruteForceIPWhitelist,
 				EnableSubInfoNodes:       systemConfig.EnableSubInfoNodes,
 				SubInfoExpirePrefix:      systemConfig.SubInfoExpirePrefix,
 				SubInfoTrafficPrefix:     systemConfig.SubInfoTrafficPrefix,
@@ -157,6 +163,8 @@ func handleGetUserConfig(w http.ResponseWriter, r *http.Request, repo *storage.T
 		ClientCompatibilityMode:  systemConfig.ClientCompatibilityMode,
 		SilentMode:               systemConfig.SilentMode,
 		SilentModeTimeout:        systemConfig.SilentModeTimeout,
+		BruteForceMaxFailures:    systemConfig.BruteForceMaxFailures,
+		BruteForceIPWhitelist:    systemConfig.BruteForceIPWhitelist,
 		EnableSubInfoNodes:       systemConfig.EnableSubInfoNodes,
 		SubInfoExpirePrefix:      systemConfig.SubInfoExpirePrefix,
 		SubInfoTrafficPrefix:     systemConfig.SubInfoTrafficPrefix,
@@ -247,6 +255,10 @@ func handleUpdateUserConfig(w http.ResponseWriter, r *http.Request, repo *storag
 	if silentModeTimeout <= 0 {
 		silentModeTimeout = 15
 	}
+	bruteForceMaxFailures := payload.BruteForceMaxFailures
+	if bruteForceMaxFailures <= 0 {
+		bruteForceMaxFailures = 5
+	}
 	subInfoExpirePrefix := payload.SubInfoExpirePrefix
 	if subInfoExpirePrefix == "" {
 		subInfoExpirePrefix = "📅过期时间"
@@ -271,6 +283,8 @@ func handleUpdateUserConfig(w http.ResponseWriter, r *http.Request, repo *storag
 	systemConfig.ClientCompatibilityMode = payload.ClientCompatibilityMode
 	systemConfig.SilentMode = payload.SilentMode
 	systemConfig.SilentModeTimeout = silentModeTimeout
+	systemConfig.BruteForceMaxFailures = bruteForceMaxFailures
+	systemConfig.BruteForceIPWhitelist = strings.TrimSpace(payload.BruteForceIPWhitelist)
 	systemConfig.EnableSubInfoNodes = payload.EnableSubInfoNodes
 	systemConfig.SubInfoExpirePrefix = subInfoExpirePrefix
 	systemConfig.SubInfoTrafficPrefix = subInfoTrafficPrefix
@@ -281,6 +295,9 @@ func handleUpdateUserConfig(w http.ResponseWriter, r *http.Request, repo *storag
 	if err := repo.UpdateSystemConfig(r.Context(), systemConfig); err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Errorf("update system config: %w", err))
 		return
+	}
+	if bfp := GetBruteForceProtector(); bfp != nil {
+		bfp.UpdateConfig(systemConfig.BruteForceMaxFailures, systemConfig.BruteForceIPWhitelist)
 	}
 
 	if oldSysCfg.SilentMode != payload.SilentMode {
@@ -316,6 +333,8 @@ func handleUpdateUserConfig(w http.ResponseWriter, r *http.Request, repo *storag
 		ClientCompatibilityMode:  payload.ClientCompatibilityMode,
 		SilentMode:               payload.SilentMode,
 		SilentModeTimeout:        silentModeTimeout,
+		BruteForceMaxFailures:    bruteForceMaxFailures,
+		BruteForceIPWhitelist:    strings.TrimSpace(payload.BruteForceIPWhitelist),
 		EnableSubInfoNodes:       payload.EnableSubInfoNodes,
 		SubInfoExpirePrefix:      subInfoExpirePrefix,
 		SubInfoTrafficPrefix:     subInfoTrafficPrefix,

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -24,13 +25,28 @@ type BruteForceProtector struct {
 	maxFailures   int
 	window        time.Duration
 	blockDuration time.Duration
+	whitelist     map[string]struct{}
 }
 
-func NewBruteForceProtector() *BruteForceProtector {
+func NewBruteForceProtector(maxFailures int, whitelistRaw string) *BruteForceProtector {
+	if maxFailures <= 0 {
+		maxFailures = 5
+	}
+	whitelist := make(map[string]struct{})
+	for _, part := range strings.FieldsFunc(whitelistRaw, func(r rune) bool {
+		return r == ',' || r == '\n' || r == '\r' || r == '\t' || r == ' '
+	}) {
+		ip := strings.TrimSpace(part)
+		if ip == "" {
+			continue
+		}
+		whitelist[ip] = struct{}{}
+	}
 	p := &BruteForceProtector{
-		maxFailures:   5,
+		maxFailures:   maxFailures,
 		window:        24 * time.Hour,
 		blockDuration: 24 * time.Hour,
+		whitelist:     whitelist,
 	}
 	globalBruteForceProtector = p
 	return p
@@ -41,6 +57,9 @@ func GetBruteForceProtector() *BruteForceProtector {
 }
 
 func (p *BruteForceProtector) IsBlocked(ip, path string) bool {
+	if _, ok := p.whitelist[ip]; ok {
+		return false
+	}
 	val, ok := p.attempts.Load(ip)
 	if !ok {
 		return false
@@ -68,6 +87,9 @@ func (p *BruteForceProtector) IsBlocked(ip, path string) bool {
 }
 
 func (p *BruteForceProtector) RecordFailure(ip, path string) {
+	if _, ok := p.whitelist[ip]; ok {
+		return
+	}
 	now := time.Now()
 
 	val, loaded := p.attempts.Load(ip)
@@ -133,6 +155,24 @@ func (p *BruteForceProtector) RecordFailure(ip, path string) {
 
 func (p *BruteForceProtector) RecordSuccess(ip string) {
 	p.attempts.Delete(ip)
+}
+
+func (p *BruteForceProtector) UpdateConfig(maxFailures int, whitelistRaw string) {
+	if maxFailures <= 0 {
+		maxFailures = 5
+	}
+	whitelist := make(map[string]struct{})
+	for _, part := range strings.FieldsFunc(whitelistRaw, func(r rune) bool {
+		return r == ',' || r == '\n' || r == '\r' || r == '\t' || r == ' '
+	}) {
+		ip := strings.TrimSpace(part)
+		if ip == "" {
+			continue
+		}
+		whitelist[ip] = struct{}{}
+	}
+	p.maxFailures = maxFailures
+	p.whitelist = whitelist
 }
 
 // StatusRecorder wraps http.ResponseWriter to capture the status code.

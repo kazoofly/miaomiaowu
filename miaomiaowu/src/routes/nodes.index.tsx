@@ -3383,7 +3383,7 @@ vless://uuid@example.com:443?type=ws&security=tls&path=/websocket#VLESS节点
                                   variant='ghost'
                                   size='icon'
                                   className='size-7 text-[#d97757] hover:text-[#c66647]'
-                                  onClick={() => handleNameEditStart(node)}
+                                  onPointerDown={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); handleNameEditStart(node) }}
                                       disabled={node.isSaved ? isUpdatingNodeName : false}
                                 >
                                   <Pencil className='size-4' />
@@ -3814,7 +3814,7 @@ vless://uuid@example.com:443?type=ws&security=tls&path=/websocket#VLESS节点
                                           variant='ghost'
                                           size='icon'
                                           className='size-7 text-[#d97757] hover:text-[#c66647]'
-                                          onClick={() => handleNameEditStart(node)}
+                                          onPointerDown={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); handleNameEditStart(node) }}
                                           disabled={node.isSaved ? isUpdatingNodeName : false}
                                         >
                                           <Pencil className='size-4' />
@@ -4331,7 +4331,7 @@ vless://uuid@example.com:443?type=ws&security=tls&path=/websocket#VLESS节点
                                     variant='ghost'
                                     size='icon'
                                     className='size-7 text-[#d97757] hover:text-[#c66647] shrink-0'
-                                    onClick={() => handleNameEditStart(node)}
+                                    onPointerDown={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); handleNameEditStart(node) }}
                                     disabled={node.isSaved ? isUpdatingNodeName : false}
                                   >
                                     <Pencil className='size-4' />
@@ -4550,7 +4550,7 @@ vless://uuid@example.com:443?type=ws&security=tls&path=/websocket#VLESS节点
                                     <div className='flex items-center gap-2 min-w-0'>
                                       <span className='truncate flex-1 min-w-0 font-medium text-sm' title={node.name || '未知'}><Twemoji>{node.name || '未知'}</Twemoji></span>
                                       {node.isSaved && <Check className='size-4 text-green-600 shrink-0' />}
-                                      <Button variant='ghost' size='icon' className='size-7 text-[#d97757] shrink-0' onClick={() => handleNameEditStart(node)}>
+                                      <Button variant='ghost' size='icon' className='size-7 text-[#d97757] shrink-0' onPointerDown={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); handleNameEditStart(node) }}>
                                         <Pencil className='size-4' />
                                       </Button>
                                       {node.isSaved && node.dbNode && !node.dbNode.protocol.includes('⇋') && (
@@ -4810,7 +4810,7 @@ vless://uuid@example.com:443?type=ws&security=tls&path=/websocket#VLESS节点
                                     variant='ghost'
                                     size='icon'
                                     className='size-7 text-[#d97757] hover:text-[#c66647] shrink-0'
-                                    onClick={() => handleNameEditStart(node)}
+                                    onPointerDown={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); handleNameEditStart(node) }}
                                     disabled={node.isSaved ? isUpdatingNodeName : false}
                                   >
                                     <Pencil className='size-4' />

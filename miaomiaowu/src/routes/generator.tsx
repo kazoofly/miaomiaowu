@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Loader2, Save, Layers, Activity, MapPin, Plus, Eye, Pencil, Trash2, Settings, FileText, Upload } from 'lucide-react'
+import { Loader2, Save, Layers, Activity, MapPin, Plus, Eye, Pencil, Trash2, Settings, FileText, Upload, RefreshCw } from 'lucide-react'
 import { Topbar } from '@/components/layout/topbar'
 import { useAuthStore } from '@/stores/auth-store'
 import { api } from '@/lib/api'
@@ -292,6 +292,8 @@ function SubscriptionGeneratorPage() {
   const [subscribeName, setSubscribeName] = useState('')
   const [subscribeFilename, setSubscribeFilename] = useState('')
   const [subscribeDescription, setSubscribeDescription] = useState('')
+  const [updateSubscribeDialogOpen, setUpdateSubscribeDialogOpen] = useState(false)
+  const [targetSubscribeId, setTargetSubscribeId] = useState<number | null>(null)
 
   // 流量配置状态
   const [trafficLimit, setTrafficLimit] = useState('')
@@ -351,6 +353,16 @@ function SubscriptionGeneratorPage() {
     },
     enabled: Boolean(auth.accessToken) && useNewTemplateSystem,
   })
+
+  const { data: subscribeFilesData } = useQuery({
+    queryKey: ['subscribe-files'],
+    queryFn: async () => {
+      const response = await api.get('/api/admin/subscribe-files')
+      return response.data as { files?: any[]; subscribe_files?: any[] }
+    },
+    enabled: Boolean(auth.accessToken),
+  })
+  const subscribeFiles = subscribeFilesData?.files || subscribeFilesData?.subscribe_files || []
 
   // 获取旧模板列表（旧模板系统）
   const { data: oldTemplates = [] } = useQuery<string[]>({
@@ -1186,6 +1198,7 @@ function SubscriptionGeneratorPage() {
       selected_tags?: string[]
       traffic_limit?: number | null
       stats_server_ids?: string
+      selected_node_ids?: number[]
     }) => {
       const response = await api.post('/api/admin/subscribe-files/create-from-config', data)
       return response.data
@@ -1234,11 +1247,13 @@ function SubscriptionGeneratorPage() {
       selected_tags?: string[]
       traffic_limit?: number | null
       stats_server_ids?: string
+      selected_node_ids?: number[]
     } = {
       name: subscribeName.trim(),
       filename: subscribeFilename.trim(),
       description: subscribeDescription.trim(),
       content: clashConfig,
+      selected_node_ids: Array.from(selectedNodeIds),
     }
 
     // V3 模式下传递模板和标签信息
@@ -1256,6 +1271,47 @@ function SubscriptionGeneratorPage() {
     }
 
     saveSubscribeMutation.mutate(data)
+  }
+
+  const updateExistingSubscribeMutation = useMutation({
+    mutationFn: async (payload: { id: number; selected_node_ids: number[]; content: string }) => {
+      const response = await api.put(`/api/admin/subscribe-files/${payload.id}`, {
+        selected_node_ids: payload.selected_node_ids,
+        content: payload.content,
+      })
+      return response.data
+    },
+    onSuccess: () => {
+      toast.success('现有订阅已更新')
+      setUpdateSubscribeDialogOpen(false)
+      setTargetSubscribeId(null)
+      queryClient.invalidateQueries({ queryKey: ['subscribe-files'] })
+      queryClient.invalidateQueries({ queryKey: ['user-subscriptions'] })
+    },
+    onError: (error: any) => {
+      const message = error.response?.data?.error || '更新现有订阅失败'
+      toast.error(message)
+    },
+  })
+
+  const handleOpenUpdateSubscribeDialog = () => {
+    if (!clashConfig) {
+      toast.error('请先生成配置')
+      return
+    }
+    if (selectedNodeIds.size === 0) {
+      toast.error('请先选择节点')
+      return
+    }
+    setUpdateSubscribeDialogOpen(true)
+  }
+
+  const handleUpdateExistingSubscribe = () => {
+    if (!targetSubscribeId) {
+      toast.error('请选择要更新的订阅')
+      return
+    }
+    updateExistingSubscribeMutation.mutate({ id: targetSubscribeId, selected_node_ids: Array.from(selectedNodeIds), content: clashConfig })
   }
 
   // 手动分组功能
@@ -2817,6 +2873,10 @@ function SubscriptionGeneratorPage() {
                         </Button>
                       </>
                     )}
+                    <Button size='sm' variant='outline' onClick={handleOpenUpdateSubscribeDialog}>
+                      <RefreshCw className='h-4 w-4' />
+                      更新现有订阅
+                    </Button>
                     <Button size='sm' onClick={handleOpenSaveDialog}>
                       <Save className='h-4 w-4' />
                       保存订阅
@@ -2846,6 +2906,10 @@ function SubscriptionGeneratorPage() {
                       </Button>
                     </>
                   )}
+                  <Button variant='outline' onClick={handleOpenUpdateSubscribeDialog}>
+                    <RefreshCw className='mr-2 h-4 w-4' />
+                    更新现有订阅
+                  </Button>
                   <Button onClick={handleOpenSaveDialog}>
                     <Save className='mr-2 h-4 w-4' />
                     保存订阅
@@ -2916,6 +2980,40 @@ function SubscriptionGeneratorPage() {
             <Button onClick={handleSaveSubscribe} disabled={saveSubscribeMutation.isPending}>
               {saveSubscribeMutation.isPending && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
               保存
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={updateSubscribeDialogOpen} onOpenChange={setUpdateSubscribeDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>更新现有订阅</DialogTitle>
+            <DialogDescription>
+              使用当前勾选的节点覆盖更新已有订阅，订阅链接保持不变。
+            </DialogDescription>
+          </DialogHeader>
+          <div className='space-y-4 py-4'>
+            <div className='space-y-2'>
+              <Label>选择要更新的订阅</Label>
+              <select
+                className='w-full rounded-md border bg-background px-3 py-2 text-sm'
+                value={targetSubscribeId ?? ''}
+                onChange={(e) => setTargetSubscribeId(e.target.value ? Number(e.target.value) : null)}
+              >
+                <option value=''>请选择订阅</option>
+                {subscribeFiles.map((file: any) => (
+                  <option key={file.id} value={file.id}>{file.name} ({file.filename})</option>
+                ))}
+              </select>
+              <p className='text-xs text-muted-foreground'>当前将写入 {selectedNodeIds.size} 个已勾选节点。</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant='outline' onClick={() => setUpdateSubscribeDialogOpen(false)}>取消</Button>
+            <Button onClick={handleUpdateExistingSubscribe} disabled={updateExistingSubscribeMutation.isPending}>
+              {updateExistingSubscribeMutation.isPending && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
+              更新
             </Button>
           </DialogFooter>
         </DialogContent>
