@@ -33,5 +33,27 @@ echo "✓ 更新成功 quick-install.sh"
 sed -i "s/const CURRENT_VERSION = '.*'/const CURRENT_VERSION = '$VERSION'/" "${PROJECT_ROOT}/miaomiaowu/src/hooks/use-version-check.ts"
 echo "✓ 更新成功 miaomiaowu/src/hooks/use-version-check.ts"
 
+# 更新 package-lock.json（根包版本；依赖自身版本不处理）
+if [ -f "${PROJECT_ROOT}/miaomiaowu/package-lock.json" ]; then
+    node <<EOF
+const fs = require('fs')
+const path = '${PROJECT_ROOT}/miaomiaowu/package-lock.json'
+const data = JSON.parse(fs.readFileSync(path, 'utf8'))
+data.version = '${VERSION}'
+if (data.packages && data.packages['']) {
+  data.packages[''].version = '${VERSION}'
+}
+fs.writeFileSync(path, JSON.stringify(data, null, 2) + '\n')
+EOF
+    echo "✓ 更新成功 miaomiaowu/package-lock.json"
+fi
+
 echo ""
 echo "版本号同步完成: $VERSION"
+echo "已同步文件:"
+echo "- miaomiaowu/package.json"
+echo "- miaomiaowu/package-lock.json"
+echo "- internal/version/version.go"
+echo "- miaomiaowu/src/hooks/use-version-check.ts"
+echo "- install.sh"
+echo "- quick-install.sh"

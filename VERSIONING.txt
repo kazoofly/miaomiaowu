@@ -1,0 +1,37 @@
+# Versioning Checklist
+
+妙妙屋版本更新时，统一以 `miaomiaowu/package.json` 里的版本号为主，再同步到以下位置：
+
+## 必须同步的版本号
+
+1. `miaomiaowu/package.json`
+2. `miaomiaowu/package-lock.json`
+   - 顶层 `version`
+   - `packages[""] .version`
+3. `internal/version/version.go`
+4. `miaomiaowu/src/hooks/use-version-check.ts`
+5. `install.sh`
+6. `quick-install.sh`
+
+## 推荐做法
+
+优先运行：
+
+```bash
+bash scripts/sync-version.sh
+```
+
+它会从 `miaomiaowu/package.json` 读取版本号，并同步到其他版本文件。
+
+## 发版前核对
+
+发版前至少检查：
+
+```bash
+grep -RIn "0\.[0-9]\+\.[0-9]\+\|CURRENT_VERSION\|const Version = \|VERSION=\"v" internal/version miaomiaowu/package.json miaomiaowu/package-lock.json miaomiaowu/src/hooks/use-version-check.ts install.sh quick-install.sh
+```
+
+## 说明
+
+- `README.md` 中的历史版本号是更新日志，不属于“必须同步到当前版本”的字段。
+- `node_modules`、`internal/web/dist`、依赖锁文件里的第三方依赖版本，不应当被当成应用版本统一替换。
