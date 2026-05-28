@@ -263,7 +263,25 @@ func main() {
 			return
 		}
 
-		isSubscriptionFetch := isTempSub || (len(path) >= 2 && isAlphanumeric(path))
+		reservedWebRoutes := map[string]struct{}{
+			"login": {},
+			"nodes": {},
+			"subscription": {},
+			"templates": {},
+			"templates-v3": {},
+			"system-settings": {},
+			"settings": {},
+			"generator": {},
+			"probe": {},
+			"users": {},
+			"change-password": {},
+			"custom-rules": {},
+			"subscribe-files": {},
+			"rules": {},
+			"init": {},
+		}
+		_, isReservedWebRoute := reservedWebRoutes[path]
+		isSubscriptionFetch := isTempSub || (len(path) >= 2 && isAlphanumeric(path) && !isReservedWebRoute)
 		if isSubscriptionFetch && !subRateLimiter.Allow(clientIP) {
 			http.Error(w, "请求过于频繁，请稍后再试", http.StatusTooManyRequests)
 			return
